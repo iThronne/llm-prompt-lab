@@ -1,0 +1,28 @@
+# 模型配置
+# 每个模型定义 API endpoint、认证方式、默认参数
+
+models:
+  gpt-4o:
+    provider: openai
+    model: gpt-4o
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+
+  gpt-4o-mini:
+    provider: openai
+    model: gpt-4o-mini
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+
+  deepseek-chat:
+    provider: openai
+    model: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+
+  # 本地模型示例（Ollama）
+  qwen2.5-local:
+    provider: openai
+    model: qwen2.5:7b
+    base_url: http://localhost:11434/v1
+    api_key_env: ""  # Ollama 不需要 key

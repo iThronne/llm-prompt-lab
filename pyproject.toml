@@ -1,0 +1,17 @@
+[project]
+name = "llm-prompt-lab"
+version = "0.1.0"
+description = "LLM API experimentation framework with evaluation and checkpoint resume"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "pandas>=2.0",
+    "openpyxl>=3.0",
+    "jinja2>=3.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "tqdm>=4.0",
+]
+
+[project.scripts]
+llm-lab = "src.cli:main"
