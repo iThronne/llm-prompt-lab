@@ -1,9 +1,14 @@
 """配置加载与校验模块。
 
-从 config/ 目录加载 experiment.yaml 以及 config/prompts/ 目录下的 .md 文件，
+从 config/ 目录加载 experiment.yaml 以及 config/prompts/ 目录下的 prompt 文件，
 使用 Pydantic 做 schema 校验，提供类型安全的配置对象。
 
-experiment.yaml 定义一组实验配置（含模型连接信息），每次运行基于该配置，
+experiment.yaml 结构：
+  - dataset: 数据集路径（所有 profile 共享）
+  - judge: 评测配置（所有 profile 共享，可选）
+  - profiles: 命名实验配置列表，每个 profile 包含完整的 candidate 和 prompt，
+    通过 --profile 选择。
+
 运行时快照保存到 results/<run_name>/meta.json 保证可复现。
 输出文件：responses.jsonl（模型响应）、scores.jsonl（评分）、summary.json（汇总）。
 """
@@ -20,18 +25,33 @@ CONFIG_DIR = Path("config")
 
 
 class ModelConfig(BaseModel):
+    """模型连接配置。
+
+    标准 OpenAI SDK 参数直接定义（model, temperature, max_tokens 等）。
+    非标准 API 参数（如 chat_template_kwargs）放在 extra_body 下，
+    SDK 会将其展开到 HTTP 请求体顶层，与标准参数并列。
+    """
+
     provider: str
     model: str
     base_url: str
     api_key_env: str = ""
     temperature: float = 0.7
     max_tokens: int = 1024
+    extra_body: Optional[dict] = None
 
     INFRA_PARAMS: ClassVar[set[str]] = {"provider", "base_url", "api_key_env"}
 
     @property
     def call_params(self) -> dict:
-        return {k: v for k, v in self.model_dump().items() if k not in self.INFRA_PARAMS}
+        """返回 API 调用所需的参数（排除基础设施字段和 None 值）。
+
+        包括标准字段（model, temperature, max_tokens）以及 extra_body（如已配置）。
+        """
+        return {
+            k: v for k, v in self.model_dump().items()
+            if k not in self.INFRA_PARAMS and v is not None
+        }
 
 
 class PromptConfig(BaseModel):
@@ -46,7 +66,7 @@ class JudgeConfig(BaseModel):
 
 
 class ExperimentConfig(BaseModel):
-    model: ModelConfig
+    candidate: ModelConfig
     prompt: str
     prompt_name: str = ""
     dataset: str
@@ -54,31 +74,74 @@ class ExperimentConfig(BaseModel):
 
 
 class Config:
-    """聚合加载所有配置文件，提供便捷的查找方法。"""
+    """聚合加载所有配置文件，提供便捷的查找方法。
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    支持两种 experiment.yaml 格式：
+      - 单配置模式：整个文件为一组实验配置（简单场景）。
+      - 多 profile 模式：profiles 节定义多个完整配置，dataset/judge 共享。
+    """
+
+    def __init__(self, config_dir: Optional[Path] = None, profile: Optional[str] = None):
         base = config_dir or CONFIG_DIR
         self.prompts = self._load_prompts(base / "prompts")
-        self.experiment = self._load_experiment(base / "experiment.yaml")
+        self.profile_name: str = ""
+        self.available_profiles: list[str] = []
+        self.experiment = self._load_experiment(base / "experiment.yaml", profile)
+
+    PROMPT_EXTENSIONS = {".md", ".txt"}
 
     def _load_prompts(self, path: Path) -> dict[str, PromptConfig]:
-        """扫描 config/prompts/ 目录，读取 .md 文件作为 prompt。
-        prompt 名 = 文件名去掉 .md 后缀。
+        """扫描 config/prompts/ 目录，读取 prompt 文件。
+
+        支持 .md / .txt 等扩展名。key 为完整文件名（如 test.md），
+        YAML 中必须写带扩展名的文件名来引用，否则报错。
         """
         prompts: dict[str, PromptConfig] = {}
-        for md_file in sorted(path.glob("*.md")):
-            name = md_file.stem
-            prompts[name] = PromptConfig(content=md_file.read_text(encoding="utf-8"))
+        for ext in self.PROMPT_EXTENSIONS:
+            for prompt_file in sorted(path.glob(f"*{ext}")):
+                prompts[prompt_file.name] = PromptConfig(content=prompt_file.read_text(encoding="utf-8"))
         return prompts
 
-    def _load_experiment(self, path: Path) -> ExperimentConfig:
+    def _load_experiment(self, path: Path, profile: Optional[str]) -> ExperimentConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        exp = ExperimentConfig(**data)
-        # prompt 字段如果对应 config/prompts/ 下的 .md 文件名，则解析为实际内容
-        if exp.prompt in self.prompts:
-            exp.prompt_name = exp.prompt
-            exp.prompt = self.prompts[exp.prompt].content
-        if exp.judge and exp.judge.prompt in self.prompts:
+
+        if "profiles" in data:
+            # 多 profile 模式：profiles 内每个 profile 是完整配置，共享 dataset/judge
+            profiles_data: dict = data.pop("profiles")
+            self.available_profiles = sorted(profiles_data.keys())
+
+            selected = profile or "default"
+            if selected not in profiles_data:
+                raise ValueError(
+                    f"Profile '{selected}' not found. Available: {self.available_profiles}"
+                )
+            self.profile_name = selected
+
+            # 共享配置（dataset, judge）+ 所选 profile（candidate, prompt）
+            shared = {k: v for k, v in data.items() if k in ("dataset", "judge")}
+            profile_data = profiles_data[selected]
+            merged = {**shared, **profile_data}
+            exp = ExperimentConfig(**merged)
+        else:
+            # 单配置模式（简单场景）
+            self.available_profiles = []
+            self.profile_name = ""
+            exp = ExperimentConfig(**data)
+
+        # prompt 字段必须匹配 config/prompts/ 下的文件名（含扩展名）
+        exp.prompt_name = exp.prompt
+        if exp.prompt not in self.prompts:
+            raise ValueError(
+                f"Prompt '{exp.prompt}' not found in config/prompts/. "
+                f"Available: {list(self.prompts.keys())}"
+            )
+        exp.prompt = self.prompts[exp.prompt].content
+        if exp.judge:
+            if exp.judge.prompt not in self.prompts:
+                raise ValueError(
+                    f"Judge prompt '{exp.judge.prompt}' not found in config/prompts/. "
+                    f"Available: {list(self.prompts.keys())}"
+                )
             exp.judge.prompt = self.prompts[exp.judge.prompt].content
         return exp
 
@@ -103,8 +166,9 @@ class Config:
     def generate_run_name(
             model_config: ModelConfig, prompt_name: str, prompt_content: str,
             dataset: str, dataset_content_hash: str,
+            profile_name: str = "",
     ) -> str:
-        """Generate a deterministic run name: {model}-{prompt}-{dataset_stem}-{hash}
+        """Generate a deterministic run name: [{profile}-]{model}-{prompt}-{dataset_stem}-{hash}
 
         hash covers model call params + prompt content + dataset file content,
         so any substantive change produces a different run name.
@@ -118,4 +182,9 @@ class Config:
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
         h = hashlib.md5(canonical.encode()).hexdigest()[:8]
         dataset_stem = Path(dataset).stem
-        return f"{model_config.model}-{prompt_name}-{dataset_stem}-{h}"
+
+        parts = []
+        if profile_name:
+            parts.append(profile_name)
+        parts.extend([model_config.model, prompt_name, dataset_stem, h])
+        return "-".join(parts)

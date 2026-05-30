@@ -1,22 +1,43 @@
-# 实验配置（每次跑实验前修改此文件）
+# 实验配置 — 多 profile 模式
+# profiles 节定义多个完整的候选模型配置，通过 --profile 选择。
+# dataset 和 judge 为所有 profile 共享。
 
-model:
-  provider: ali
-  model: deepseek-v4-flash
-  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-  api_key_env: OPENAI_API_KEY
-  temperature: 0.7
-  max_tokens: 1024
-
-prompt: default
 dataset: data/example.xlsx
 
-# 评测配置 (LLM-as-Judge)
+# 评测模型（judge）配置 — 所有 profile 共享
 judge:
   model:
     provider: ali
     model: qwen3.7-max
     base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-    api_key_env: OPENAI_API_KEY
-  prompt: judge-default
+    api_key_env: JUDGE_OPENAI_API_KEY
+  prompt: judge-system-prompt-default.md
   dimensions: [ "relevance", "factuality", "fluency", "structure", "overall" ]
+
+# ── Profiles ────────────────────────────────────────────────────────
+# 每个 profile 包含完整的 candidate 配置和 prompt。
+# 非标准 API 参数（如 chat_template_kwargs）放在 extra_body 下，
+# SDK 会将其展开到 HTTP 请求体顶层，与标准参数并列。
+profiles:
+  default:
+    candidate:
+      provider: ali
+      model: deepseek-v4-flash
+      base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      api_key_env: CANDIDATE_OPENAI_API_KEY
+      temperature: 0.7
+      max_tokens: 1024
+    prompt: candidate-system-prompt-default.md
+
+  think:
+    candidate:
+      provider: ali
+      model: deepseek-r1
+      base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      api_key_env: CANDIDATE_OPENAI_API_KEY
+      temperature: 0.3
+      max_tokens: 8192
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    prompt: candidate-system-prompt-default.md

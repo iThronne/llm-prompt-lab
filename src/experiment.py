@@ -17,16 +17,15 @@ from pathlib import Path
 from tqdm import tqdm
 
 from src.config import Config, ExperimentConfig
+from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import load_dataset, render_request
 from src.models import create_client, call_model
 
-RESULTS_DIR = Path("results")
-META_FILE = "meta.json"
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
 
 
-def save_run_meta(run_name: str, experiment: ExperimentConfig):
+def save_run_meta(run_name: str, experiment: ExperimentConfig, profile_name: str = ""):
     """Save run metadata (full experiment config snapshot) for reproducibility."""
     result_dir = RESULTS_DIR / run_name
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +33,8 @@ def save_run_meta(run_name: str, experiment: ExperimentConfig):
     shutil.copy2(dataset_path, result_dir / dataset_path.name)
     meta = {
         "run_name": run_name,
-        "model": experiment.model.model_dump(),
+        "profile": profile_name,
+        "candidate": experiment.candidate.model_dump(),
         "prompt_name": experiment.prompt_name,
         "prompt_content": experiment.prompt,
         "dataset": experiment.dataset,
@@ -103,9 +103,9 @@ async def run_experiment(config: Config, run_name: str):
         run_name: 输出目录使用的名称
     """
     exp = config.get_experiment()
-    model_cfg = exp.model
+    model_cfg = exp.candidate
 
-    save_run_meta(run_name, exp)
+    save_run_meta(run_name, exp, profile_name=config.profile_name)
 
     client = create_client(model_cfg)
     rows = load_dataset(exp.dataset)

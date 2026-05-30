@@ -14,8 +14,9 @@ import json
 from pathlib import Path
 
 from src.config import Config
+from src.constants import RESULTS_DIR, META_FILE
 from src.evaluator import run_evaluation
-from src.experiment import run_experiment, RESULTS_DIR, META_FILE
+from src.experiment import run_experiment
 from src.importer import import_excel
 
 
@@ -25,8 +26,10 @@ def main():
 
     run_p = sub.add_parser("run", help="运行实验（断点续跑）")
     run_p.add_argument("--name", help="自定义 run 名称（默认根据配置自动生成，相同配置可断点续跑）")
+    run_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile（默认 default）")
 
-    sub.add_parser("eval", help="评测实验结果").add_argument("run", help="run 名称（YAML key 或自动生成名）")
+    eval_p = sub.add_parser("eval", help="评测实验结果")
+    eval_p.add_argument("run", help="run 名称（YAML key 或自动生成名）")
 
     import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
     import_p.add_argument("excel", help="Excel 文件路径")
@@ -34,23 +37,24 @@ def main():
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
 
-    sub.add_parser("list", help="列出实验定义与已有 run")
+    list_p = sub.add_parser("list", help="列出实验定义与已有 run")
+    list_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile")
 
     sub.add_parser("show", help="查看结果摘要").add_argument("run", help="run 名称（YAML key 或自动生成名）")
 
     args = parser.parse_args()
 
     if args.command == "run":
-        config = Config()
+        config = Config(profile=getattr(args, "profile", None))
         exp = config.get_experiment()
         run_name = args.name if args.name else Config.generate_run_name(
-            exp.model, exp.prompt_name, exp.prompt,
+            exp.candidate, exp.prompt_name, exp.prompt,
             exp.dataset, Config.hash_file(Path(exp.dataset)),
+            profile_name=config.profile_name,
         )
         asyncio.run(run_experiment(config, run_name))
     elif args.command == "eval":
-        config = Config()
-        asyncio.run(run_evaluation(config, args.run))
+        asyncio.run(run_evaluation(args.run))
     elif args.command == "import":
         config = Config()
         import_excel(
@@ -61,10 +65,17 @@ def main():
             response_col=args.response_col,
         )
     elif args.command == "list":
-        config = Config()
+        config = Config(profile=getattr(args, "profile", None))
+        # 显示 profiles 信息
+        if config.available_profiles:
+            print("=== 可用 Profiles ===")
+            for p in config.available_profiles:
+                marker = " ← 当前" if p == config.profile_name else ""
+                print(f"  {p}{marker}")
+            print()
         exp = config.get_experiment()
         print("=== 当前实验配置 ===")
-        print(f"  model: {exp.model.model}  prompt: {exp.prompt_name}  dataset: {exp.dataset}")
+        print(f"  candidate: {exp.candidate.model}  prompt: {exp.prompt_name}  dataset: {exp.dataset}")
         if exp.judge:
             print(f"  judge: {exp.judge.model.model}  dims: {exp.judge.dimensions}")
         print()
@@ -77,7 +88,10 @@ def main():
                     tag = ""
                     if meta_path.exists():
                         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                        tag = f"  model={meta.get('model', {}).get('model', '?')}  prompt={meta.get('prompt_name', '?')}"
+                        profile = meta.get("profile", "")
+                        profile_tag = f"  profile={profile}" if profile else ""
+                        candidate_info = meta.get("candidate", {})
+                        tag = f"  candidate={candidate_info.get('model', '?')}  prompt={meta.get('prompt_name', '?')}{profile_tag}"
                     print(f"  {r}{tag}")
     elif args.command == "show":
         _show_experiment(args.run)

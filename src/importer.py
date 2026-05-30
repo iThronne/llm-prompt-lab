@@ -9,7 +9,7 @@ import json
 import pandas as pd
 
 from src.config import Config
-from src.experiment import RESULTS_DIR, META_FILE
+from src.constants import RESULTS_DIR, META_FILE
 
 
 def import_excel(
@@ -59,11 +59,12 @@ def import_excel(
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     # 写入 meta.json
+    # 注意：导入的数据并非由当前配置的 candidate 模型产生，故不记录 candidate 信息
     meta = {
         "run_name": run_name,
-        "model": exp.model.model_dump(),
+        "source": "imported",
         "prompt_name": exp.prompt_name,
-        "prompt_content": "",
+        "prompt_content": exp.prompt,
         "dataset": excel_path,
         "judge": exp.judge.model_dump() if exp.judge else None,
     }

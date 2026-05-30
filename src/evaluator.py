@@ -10,15 +10,17 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from src.config import Config, ModelConfig
+from src.config import ModelConfig
+from src.constants import RESULTS_DIR
 from src.experiment import load_run_meta
 from src.models import create_client
 
-RESULTS_DIR = Path("results")
 JUDGE_SEED = 7
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 2  # seconds
 
 
-async def run_evaluation(config: Config, run_name: str):
+async def run_evaluation(run_name: str):
     """对实验结果进行 LLM-as-Judge 评测。"""
     meta = load_run_meta(run_name)
     if not meta.get("judge"):
@@ -50,9 +52,9 @@ async def run_evaluation(config: Config, run_name: str):
 
     # Judge prompt 作为 system 消息（评分标准不变，user 消息每次不同）
     system_prompt = judge_data["prompt"]
-    pbar = tqdm(results, desc=f"eval/{run_name}", unit="item", initial=done_count)
+    pbar = tqdm(total=len(results), initial=done_count, desc=f"eval/{run_name}", unit="item")
 
-    for r in pbar:
+    for r in results:
         row_idx = r["row_index"]
         if row_idx in existing_scores:
             continue
@@ -62,7 +64,7 @@ async def run_evaluation(config: Config, run_name: str):
         messages = _build_judge_messages(system_prompt, r["query"], response_text)
 
         score_entry = None
-        for attempt in range(3):
+        for attempt in range(1 + MAX_RETRIES):
             try:
                 judge_resp = await client.chat.completions.create(
                     model=judge_model_cfg.model,
@@ -76,8 +78,9 @@ async def run_evaluation(config: Config, run_name: str):
                                **parsed}
                 break
             except Exception as e:
-                if attempt < 2:
-                    await asyncio.sleep(2)
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_BASE_DELAY * (2 ** attempt)
+                    await asyncio.sleep(delay)
                 else:
                     tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
                     score_entry = {"row_index": row_idx, "error": str(e)}
@@ -85,7 +88,9 @@ async def run_evaluation(config: Config, run_name: str):
         if score_entry is not None:
             existing_scores[row_idx] = score_entry
             _append_score(scores_path, score_entry)
+        pbar.update(1)
 
+    pbar.close()
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
     summary = _compute_summary(all_scores, judge_data["dimensions"])

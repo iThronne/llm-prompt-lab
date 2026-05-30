@@ -1,6 +1,7 @@
 """模型客户端模块。
 
 封装 OpenAI 兼容接口，统一调用方式。
+非标准 API 参数（如 chat_template_kwargs）通过 extra_body 传递给模型。
 """
 
 import os
@@ -26,8 +27,8 @@ async def call_model(client: AsyncOpenAI, model_config: ModelConfig, request: di
 
     Args:
         client: AsyncOpenAI 客户端实例
-        model_config: 模型配置，call_params 作为默认值
-        request: 渲染后的 API 请求 dict，其字段可覆盖 model_config 的默认值
+        model_config: 模型配置，call_params 作为默认值（优先级高于 request）
+        request: 渲染后的 API 请求 dict，model_config 中未定义的字段可由此补充
 
     Returns:
         (response_dict, actual_kwargs): API 响应 + 实际发送的完整请求参数
