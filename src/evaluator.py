@@ -1,96 +1,151 @@
 """评测模块（LLM-as-Judge）。
 
-读取 results.jsonl，用 Judge 模型对每条结果打分。
-输出 evaluation.json 包含每条评分和汇总统计。
+读取 responses.jsonl，用 Judge 模型对每条结果打分。
+逐条评分写入 scores.jsonl，汇总统计写入 summary.json。
 """
 
-import json
 import asyncio
-import time
+import json
 from pathlib import Path
 
-from jinja2 import Template
 from tqdm import tqdm
 
-from src.config import Config
+from src.config import Config, ModelConfig
+from src.experiment import load_run_meta
 from src.models import create_client
 
-
 RESULTS_DIR = Path("results")
+JUDGE_SEED = 7
 
 
-async def run_evaluation(config: Config, experiment_name: str):
+async def run_evaluation(config: Config, run_name: str):
     """对实验结果进行 LLM-as-Judge 评测。"""
-    exp = config.get_experiment(experiment_name)
-    if not exp.judge:
-        print(f"[skip] experiment '{experiment_name}' has no judge config")
+    meta = load_run_meta(run_name)
+    if not meta.get("judge"):
+        print(f"[skip] run '{run_name}' has no judge config in meta.json")
         return
 
-    judge_cfg = config.get_model(exp.judge.model)
-    client = create_client(judge_cfg)
+    judge_data = meta["judge"]
+    judge_model_cfg = ModelConfig(**judge_data["model"])
+    client = create_client(judge_model_cfg)
 
-    results_path = RESULTS_DIR / experiment_name / "results.jsonl"
-    if not results_path.exists():
-        print(f"[error] no results found at {results_path}")
+    responses_path = RESULTS_DIR / run_name / "responses.jsonl"
+    if not responses_path.exists():
+        print(f"[error] no results found at {responses_path}")
         return
 
-    results = []
-    with open(results_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                results.append(json.loads(line))
+    results = _load_responses(responses_path)
+    if not results:
+        print(f"[error] no valid results found in {responses_path}")
+        return
 
-    eval_path = RESULTS_DIR / experiment_name / "evaluation.json"
-    eval_path.parent.mkdir(parents=True, exist_ok=True)
+    scores_path = RESULTS_DIR / run_name / "scores.jsonl"
+    summary_path = RESULTS_DIR / run_name / "summary.json"
 
     # 加载已有评测结果，支持断点续评
-    existing_scores: dict[int, dict] = {}
-    if eval_path.exists():
-        existing = json.loads(eval_path.read_text(encoding="utf-8"))
-        for item in existing.get("scores", []):
-            existing_scores[item["row_index"]] = item
+    existing_scores = _load_scores(scores_path)
+    done_count = len(existing_scores)
+    if done_count > 0:
+        print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
 
-    judge_template = Template(exp.judge.prompt)
-    scores = []
-    pbar = tqdm(results, desc=f"eval/{experiment_name}", unit="item")
+    # Judge prompt 作为 system 消息（评分标准不变，user 消息每次不同）
+    system_prompt = judge_data["prompt"]
+    pbar = tqdm(results, desc=f"eval/{run_name}", unit="item", initial=done_count)
 
     for r in pbar:
         row_idx = r["row_index"]
         if row_idx in existing_scores:
-            scores.append(existing_scores[row_idx])
             continue
 
         # 提取回复文本
         response_text = _extract_response_text(r["response"])
-        judge_prompt = judge_template.render(query=r["query"], response=response_text)
+        messages = _build_judge_messages(system_prompt, r["query"], response_text)
 
+        score_entry = None
         for attempt in range(3):
             try:
                 judge_resp = await client.chat.completions.create(
-                    model=judge_cfg.model,
-                    messages=[{"role": "user", "content": judge_prompt}],
+                    model=judge_model_cfg.model,
+                    messages=messages,
                     temperature=0,
+                    seed=JUDGE_SEED,
                 )
                 content = judge_resp.choices[0].message.content or ""
                 parsed = _parse_judge_output(content)
-                score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200], **parsed}
-                scores.append(score_entry)
+                score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200],
+                               **parsed}
                 break
             except Exception as e:
                 if attempt < 2:
                     await asyncio.sleep(2)
                 else:
                     tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
-                    scores.append({"row_index": row_idx, "error": str(e)})
+                    score_entry = {"row_index": row_idx, "error": str(e)}
+
+        if score_entry is not None:
+            existing_scores[row_idx] = score_entry
+            _append_score(scores_path, score_entry)
 
     # 汇总统计
-    summary = _compute_summary(scores, exp.judge.dimensions)
+    all_scores = [existing_scores[i] for i in sorted(existing_scores)]
+    summary = _compute_summary(all_scores, judge_data["dimensions"])
 
-    output = {"experiment": experiment_name, "judge_model": exp.judge.model, "dimensions": exp.judge.dimensions, "summary": summary, "scores": scores}
-    eval_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[done] evaluation saved → {eval_path}")
+    output = {
+        "experiment": run_name,
+        "judge_model": judge_model_cfg.model,
+        "dimensions": judge_data["dimensions"],
+        "summary": summary,
+        "total_scored": len(all_scores),
+    }
+    summary_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[done] evaluation saved → {summary_path}")
     print(f"  Summary: {json.dumps(summary, ensure_ascii=False)}")
+
+
+def _load_responses(path: Path) -> list[dict]:
+    """从 responses.jsonl 加载结果，按 row_index 去重（保留最后一条）。"""
+    responses_by_idx: dict[int, dict] = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                responses_by_idx[entry["row_index"]] = entry
+    return [responses_by_idx[i] for i in sorted(responses_by_idx)]
+
+
+def _load_scores(scores_path: Path) -> dict[int, dict]:
+    """从 scores.jsonl 加载已有评分，用于断点续评。"""
+    scores: dict[int, dict] = {}
+    if not scores_path.exists():
+        return scores
+    with open(scores_path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                scores[entry["row_index"]] = entry
+    return scores
+
+
+def _append_score(scores_path: Path, entry: dict):
+    """追加一条评分到 scores.jsonl。"""
+    scores_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(scores_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _build_judge_messages(system_prompt: str, query: str, response: str) -> list[dict]:
+    """构建 judge API 调用的 messages。
+
+    Args:
+        system_prompt: 完整的评分标准（来自 judge prompt 文件）
+        query: 用户问题
+        response: 模型回复
+    """
+    user_content = f"## 待评测内容\n\n**用户问题：**\n{query}\n\n**AI 回复：**\n{response}"
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
 
 
 def _extract_response_text(response: dict) -> str:

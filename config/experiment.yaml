@@ -1,0 +1,22 @@
+# 实验配置（每次跑实验前修改此文件）
+
+model:
+  provider: ali
+  model: deepseek-v4-flash
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  api_key_env: OPENAI_API_KEY
+  temperature: 0.7
+  max_tokens: 1024
+
+prompt: default
+dataset: data/example.xlsx
+
+# 评测配置 (LLM-as-Judge)
+judge:
+  model:
+    provider: ali
+    model: qwen3.7-max
+    base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    api_key_env: OPENAI_API_KEY
+  prompt: judge-default
+  dimensions: [ "relevance", "factuality", "fluency", "structure", "overall" ]
