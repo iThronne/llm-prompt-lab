@@ -168,13 +168,14 @@ class Config:
             dataset: str, dataset_content_hash: str,
             profile_name: str = "",
     ) -> str:
-        """Generate a deterministic run name: [{profile}-]{model}-{prompt}-{dataset_stem}-{hash}
+        """Generate a deterministic run name: [{profile}-]{provider}-{model}-{prompt}-{dataset_stem}-{hash}
 
-        hash covers model call params + prompt content + dataset file content,
+        hash covers provider + model call params + prompt content + dataset file content,
         so any substantive change produces a different run name.
         The same config always produces the same run name, enabling resume/checkpoint.
         """
         payload = {
+            "provider": model_config.provider,
             "model_config": model_config.call_params,
             "prompt_content": prompt_content,
             "dataset_content_hash": dataset_content_hash,
@@ -186,5 +187,5 @@ class Config:
         parts = []
         if profile_name:
             parts.append(profile_name)
-        parts.extend([model_config.model, prompt_name, dataset_stem, h])
+        parts.extend([model_config.provider, model_config.model, prompt_name, dataset_stem, h])
         return "-".join(parts)
