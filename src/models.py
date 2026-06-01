@@ -73,6 +73,7 @@ async def call_model_stream(
 
     chunks = []
     content_parts: list[str] = []
+    reasoning_parts: list[str] = []
     first_token_time: float | None = None
     finish_reason: str | None = None
 
@@ -81,6 +82,13 @@ async def call_model_stream(
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
+
+        # 提取推理内容（思考模型的扩展字段，各家命名不同）
+        if delta.model_extra:
+            reasoning = delta.model_extra.get("reasoning") or delta.model_extra.get("reasoning_content")
+            if reasoning:
+                reasoning_parts.append(reasoning)
+
         if delta.content:
             if first_token_time is None:
                 first_token_time = time.monotonic()
@@ -90,6 +98,14 @@ async def call_model_stream(
 
     # 组装为与 chat.completions.create() 非流式响应相同的 dict 结构
     last = chunks[-1] if chunks else None
+    message = {
+        "role": "assistant",
+        "content": "".join(content_parts),
+    }
+    # 如果有推理内容，添加到 message 中（兼容各家扩展字段）
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
+
     response_dict = {
         "id": last.id if last else "",
         "object": "chat.completion",
@@ -97,10 +113,7 @@ async def call_model_stream(
         "model": last.model if last else "",
         "choices": [{
             "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "".join(content_parts),
-            },
+            "message": message,
             "finish_reason": finish_reason,
         }],
         "usage": last.usage.model_dump() if last and last.usage else None,

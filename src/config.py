@@ -193,4 +193,4 @@ class Config:
         if profile_name:
             parts.append(profile_name)
         parts.extend([model_config.provider, model_config.model, prompt_name, dataset_stem, h])
-        return "-".join(parts)
+        return "@".join(parts)
