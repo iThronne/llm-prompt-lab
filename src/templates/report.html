@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实验报告 - {{ run_name }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #1a1a1a;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-top: 4px;
+        }
+
+        /* Charts */
+        .charts-section {
+            margin-bottom: 32px;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .chart-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1a1a1a;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        /* Table */
+        .table-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .table-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .table-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .search-box {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 300px;
+        }
+        .search-box:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+        .filter-bar {
+            display: none;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .filter-bar.visible {
+            display: flex;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .filter-group label {
+            font-size: 13px;
+            color: #666;
+            white-space: nowrap;
+        }
+        .filter-select, .filter-input {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .filter-input {
+            width: 60px;
+        }
+        .filter-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .filter-btn:hover {
+            background: #f0f0f0;
+        }
+        .filter-btn.active {
+            background: #0066cc;
+            color: white;
+            border-color: #0066cc;
+        }
+        .sort-indicator {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 10px;
+        }
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .sortable:hover {
+            background: #f0f0f0;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table th {
+            background: #f8f8f8;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 2px solid #eee;
+        }
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        .data-table tr {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .data-table tr:hover {
+            background: #f8f9fa;
+        }
+        .data-table tr.expanded {
+            background: #f0f7ff;
+        }
+        .text-truncate {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .expand-row {
+            display: none;
+        }
+        .expand-row.visible {
+            display: table-row;
+        }
+        .expand-content {
+            padding: 20px;
+            background: #fafafa;
+        }
+        .expand-section {
+            margin-bottom: 16px;
+        }
+        .expand-label {
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+        .expand-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            border: 1px solid #eee;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .score-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #e8f4f8;
+            color: #0066cc;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 20px;
+        }
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .pagination button:hover:not(:disabled) {
+            background: #f0f0f0;
+        }
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .pagination .current {
+            background: #0066cc;
+            color: white;
+            border-color: #0066cc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>实验报告</h1>
+        <div class="subtitle">{{ run_name }}</div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">总行数</div>
+                <div class="stat-value">{{ stats.total_rows }}</div>
+            </div>
+            {% if stats.avg_latency_ms %}
+            <div class="stat-card">
+                <div class="stat-label">平均延迟</div>
+                <div class="stat-value">{{ stats.avg_latency_ms }} ms</div>
+            </div>
+            {% endif %}
+            {% if stats.avg_ttft_ms %}
+            <div class="stat-card">
+                <div class="stat-label">平均首 Token</div>
+                <div class="stat-value">{{ stats.avg_ttft_ms }} ms</div>
+            </div>
+            {% endif %}
+            {% if stats.total_tokens %}
+            <div class="stat-card">
+                <div class="stat-label">总 Tokens</div>
+                <div class="stat-value">{{ "{:,}".format(stats.total_tokens) }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-section">
+            <div class="charts-grid">
+                {% if has_ttft %}
+                <div class="chart-card">
+                    <div class="chart-title">首 Token 延迟 vs 总延迟</div>
+                    <div class="chart-container">
+                        <canvas id="ttftChart"></canvas>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if has_scores and score_summary %}
+                <div class="chart-card">
+                    <div class="chart-title">评分雷达图</div>
+                    <div class="chart-container">
+                        <canvas id="scoreRadarChart"></canvas>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if stats.total_tokens %}
+                <div class="chart-card">
+                    <div class="chart-title">Token 用量</div>
+                    <div class="chart-container">
+                        <canvas id="tokenChart"></canvas>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="table-section">
+            <div class="table-header">
+                <div class="table-title">数据详情</div>
+                <div class="table-controls">
+                    <input type="text" class="search-box" placeholder="搜索 query 或 response..." id="searchInput">
+                    {% if has_scores %}
+                    <button class="filter-btn" id="filterToggle" onclick="toggleFilterBar()">筛选</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% if has_scores %}
+            <div class="filter-bar" id="filterBar">
+                <div class="filter-group">
+                    <label>排序:</label>
+                    <select class="filter-select" id="sortField" onchange="applyFilters()">
+                        <option value="">默认</option>
+                        {% for dim in dimensions %}
+                        <option value="{{ dim }}">{{ dim_labels[dim] }}</option>
+                        {% endfor %}
+                        <option value="latency_ms">延迟</option>
+                        {% if has_ttft %}
+                        <option value="ttft_ms">首 Token</option>
+                        {% endif %}
+                    </select>
+                    <select class="filter-select" id="sortOrder" onchange="applyFilters()">
+                        <option value="desc">降序</option>
+                        <option value="asc">升序</option>
+                    </select>
+                </div>
+                {% for dim in dimensions %}
+                <div class="filter-group">
+                    <label>{{ dim_labels[dim] }} ≥</label>
+                    <input type="number" class="filter-input" id="min_{{ dim }}" min="0" max="5" step="1" placeholder="0" onchange="applyFilters()">
+                </div>
+                {% endfor %}
+                <button class="filter-btn" onclick="resetFilters()">重置</button>
+            </div>
+            {% endif %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Query</th>
+                        <th>Response</th>
+                        {% if has_scores %}
+                        {% for dim in dimensions %}
+                        <th class="sortable" onclick="sortByField('{{ dim }}')">{{ dim_labels[dim] }}<span class="sort-indicator" id="sort_{{ dim }}"></span></th>
+                        {% endfor %}
+                        {% endif %}
+                        <th class="sortable" onclick="sortByField('latency_ms')">延迟<span class="sort-indicator" id="sort_latency_ms"></span></th>
+                        {% if has_ttft %}
+                        <th class="sortable" onclick="sortByField('ttft_ms')">首 Token<span class="sort-indicator" id="sort_ttft_ms"></span></th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <script>
+        // 数据
+        const ROWS_DATA = {{ rows | tojson }};
+        const SCORE_SUMMARY = {{ score_summary | tojson }};
+        const DIMENSIONS = {{ dimensions | tojson }};
+        const HAS_SCORES = {{ has_scores | tojson }};
+        const HAS_TTFT = {{ has_ttft | tojson }};
+
+        // 分页
+        const PAGE_SIZE = 20;
+        let currentPage = 1;
+        let filteredRows = ROWS_DATA;
+        let currentSortField = '';
+        let currentSortOrder = 'desc';
+
+        // 搜索
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            applyFilters();
+        });
+
+        // 筛选/排序
+        function toggleFilterBar() {
+            const bar = document.getElementById('filterBar');
+            const btn = document.getElementById('filterToggle');
+            bar.classList.toggle('visible');
+            btn.classList.toggle('active');
+        }
+
+        function applyFilters() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            filteredRows = ROWS_DATA.filter(r => {
+                // 文本搜索
+                if (query && !r.query.toLowerCase().includes(query) && !r.response.toLowerCase().includes(query)) {
+                    return false;
+                }
+                {% if has_scores %}
+                // 评分筛选
+                for (const dim of DIMENSIONS) {
+                    const minInput = document.getElementById('min_' + dim);
+                    if (minInput && minInput.value !== '') {
+                        const minVal = parseInt(minInput.value);
+                        const score = r.scores[dim];
+                        if (score === undefined || score < minVal) return false;
+                    }
+                }
+                {% endif %}
+                return true;
+            });
+
+            {% if has_scores %}
+            // 排序
+            const sortField = document.getElementById('sortField').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+            if (sortField) {
+                currentSortField = sortField;
+                currentSortOrder = sortOrder;
+                filteredRows.sort((a, b) => {
+                    let valA, valB;
+                    if (DIMENSIONS.includes(sortField)) {
+                        valA = a.scores[sortField] ?? -1;
+                        valB = b.scores[sortField] ?? -1;
+                    } else {
+                        valA = a[sortField] ?? -1;
+                        valB = b[sortField] ?? -1;
+                    }
+                    return sortOrder === 'asc' ? valA - valB : valB - valA;
+                });
+            }
+            updateSortIndicators();
+            {% endif %}
+
+            currentPage = 1;
+            renderTable();
+        }
+
+        function sortByField(field) {
+            {% if has_scores %}
+            const sortField = document.getElementById('sortField');
+            const sortOrder = document.getElementById('sortOrder');
+
+            if (currentSortField === field) {
+                // 切换排序方向
+                sortOrder.value = currentSortOrder === 'desc' ? 'asc' : 'desc';
+            } else {
+                sortField.value = field;
+                sortOrder.value = 'desc';
+            }
+            applyFilters();
+            {% endif %}
+        }
+
+        function updateSortIndicators() {
+            {% if has_scores %}
+            // 清除所有指示器
+            DIMENSIONS.forEach(dim => {
+                document.getElementById('sort_' + dim).textContent = '';
+            });
+            document.getElementById('sort_latency_ms').textContent = '';
+            if (HAS_TTFT) {
+                document.getElementById('sort_ttft_ms').textContent = '';
+            }
+
+            // 设置当前排序指示器
+            if (currentSortField) {
+                const indicator = document.getElementById('sort_' + currentSortField);
+                if (indicator) {
+                    indicator.textContent = currentSortOrder === 'desc' ? '▼' : '▲';
+                }
+            }
+            {% endif %}
+        }
+
+        function resetFilters() {
+            {% if has_scores %}
+            document.getElementById('sortField').value = '';
+            document.getElementById('sortOrder').value = 'desc';
+            DIMENSIONS.forEach(dim => {
+                document.getElementById('min_' + dim).value = '';
+            });
+            {% endif %}
+            document.getElementById('searchInput').value = '';
+            currentSortField = '';
+            currentSortOrder = 'desc';
+            filteredRows = ROWS_DATA;
+            updateSortIndicators();
+            currentPage = 1;
+            renderTable();
+        }
+
+        // 渲染表格
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageRows = filteredRows.slice(start, end);
+
+            tbody.innerHTML = '';
+            pageRows.forEach(row => {
+                // 主行
+                const tr = document.createElement('tr');
+                tr.onclick = () => toggleExpand(row.row_index);
+                tr.id = `row-${row.row_index}`;
+
+                let html = `
+                    <td>${row.row_index}</td>
+                    <td class="text-truncate">${escapeHtml(row.query)}</td>
+                    <td class="text-truncate">${escapeHtml(row.response)}</td>
+                `;
+
+                if (HAS_SCORES) {
+                    DIMENSIONS.forEach(dim => {
+                        const score = row.scores[dim];
+                        html += `<td>${score !== undefined ? `<span class="score-badge">${score}</span>` : '-'}</td>`;
+                    });
+                }
+
+                html += `<td>${row.latency_ms !== null ? row.latency_ms + ' ms' : '-'}</td>`;
+                if (HAS_TTFT) {
+                    html += `<td>${row.ttft_ms !== null ? row.ttft_ms + ' ms' : '-'}</td>`;
+                }
+
+                tr.innerHTML = html;
+                tbody.appendChild(tr);
+
+                // 展开行
+                const expandTr = document.createElement('tr');
+                expandTr.className = 'expand-row';
+                expandTr.id = `expand-${row.row_index}`;
+                expandTr.innerHTML = `
+                    <td colspan="${getColspan()}">
+                        <div class="expand-content">
+                            <div class="expand-section">
+                                <div class="expand-label">Query</div>
+                                <div class="expand-text">${escapeHtml(row.query)}</div>
+                            </div>
+                            <div class="expand-section">
+                                <div class="expand-label">Response</div>
+                                <div class="expand-text">${escapeHtml(row.response)}</div>
+                            </div>
+                            ${row.reasoning ? `
+                            <div class="expand-section">
+                                <div class="expand-label">Reasoning</div>
+                                <div class="expand-text">${escapeHtml(row.reasoning)}</div>
+                            </div>
+                            ` : ''}
+                            ${row.analysis ? `
+                            <div class="expand-section">
+                                <div class="expand-label">评分分析</div>
+                                <div class="expand-text">${escapeHtmlWithNewlines(row.analysis)}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(expandTr);
+            });
+
+            renderPagination();
+        }
+
+        function getColspan() {
+            let cols = 3; // #, Query, Response
+            if (HAS_SCORES) cols += DIMENSIONS.length;
+            cols += 1; // 延迟
+            if (HAS_TTFT) cols += 1;
+            return cols;
+        }
+
+        function toggleExpand(rowIndex) {
+            const row = document.getElementById(`row-${rowIndex}`);
+            const expand = document.getElementById(`expand-${rowIndex}`);
+            row.classList.toggle('expanded');
+            expand.classList.toggle('visible');
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+            const pagination = document.getElementById('pagination');
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = `
+                <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
+                <span>第 ${currentPage} / ${totalPages} 页</span>
+                <button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>
+            `;
+            pagination.innerHTML = html;
+        }
+
+        function changePage(page) {
+            const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            renderTable();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeHtmlWithNewlines(text) {
+            return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        // 初始化表格
+        renderTable();
+
+        // 图表
+        {% if has_ttft %}
+        // TTFT vs 总延迟散点图
+        const ttftData = ROWS_DATA
+            .filter(r => r.latency_ms !== null && r.ttft_ms !== null)
+            .map(r => ({ x: r.latency_ms, y: r.ttft_ms }));
+        new Chart(document.getElementById('ttftChart'), {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: '样本',
+                    data: ttftData,
+                    backgroundColor: 'rgba(0, 102, 204, 0.6)',
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { title: { display: true, text: '总延迟 (ms)' } },
+                    y: { title: { display: true, text: '首 Token 延迟 (ms)' } }
+                }
+            }
+        });
+        {% endif %}
+
+        {% if has_scores and score_summary %}
+        // 评分雷达图
+        const scoreLabels = DIMENSIONS
+            .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
+            .map(d => `${d}（${SCORE_SUMMARY['avg_' + d]}）`);
+        const scoreValues = DIMENSIONS
+            .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
+            .map(d => SCORE_SUMMARY['avg_' + d]);
+        new Chart(document.getElementById('scoreRadarChart'), {
+            type: 'radar',
+            data: {
+                labels: scoreLabels,
+                datasets: [{
+                    label: '平均分',
+                    data: scoreValues,
+                    backgroundColor: 'rgba(0, 102, 204, 0.2)',
+                    borderColor: 'rgba(0, 102, 204, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(0, 102, 204, 1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 5,
+                        ticks: { stepSize: 1 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+        {% endif %}
+
+        {% if stats.total_tokens %}
+        // Token 用量柱状图
+        new Chart(document.getElementById('tokenChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Prompt Tokens', 'Completion Tokens'],
+                datasets: [{
+                    label: '数量',
+                    data: [{{ stats.total_prompt_tokens }}, {{ stats.total_completion_tokens }}],
+                    backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 159, 64, 0.6)'],
+                    borderColor: ['rgba(75, 192, 192, 1)', 'rgba(255, 159, 64, 1)'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Token 数量' }
+                    }
+                }
+            }
+        });
+        {% endif %}
+    </script>
+</body>
+</html>

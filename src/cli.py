@@ -2,10 +2,12 @@
 
 子命令：
   run              运行实验（基于 experiment.yaml 配置）
-  eval <run>       评测实验结果 (LLM-as-Judge)
+  eval [run]       评测实验结果 (LLM-as-Judge)，默认评测最新实验
   import           从 Excel 导入已有数据（用于评测现网数据）
   list             列出已有 run
   show <run>       查看实验结果摘要
+  report <run>     生成 HTML 可视化报告
+  export <run>     导出 Excel 文件
 """
 
 import argparse
@@ -18,6 +20,31 @@ from src.constants import RESULTS_DIR, META_FILE
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
 from src.importer import import_excel
+from src.reporter import generate_html_report, export_excel
+
+
+def _resolve_run_name(run_name: str | None) -> str | None:
+    """解析 run 名称，如果未指定则返回最新的实验目录名。
+
+    Returns:
+        run 名称，如果找不到任何实验则返回 None
+    """
+    if run_name:
+        return run_name
+
+    if not RESULTS_DIR.exists():
+        print("[error] 没有找到任何实验结果目录")
+        return None
+
+    runs = [d for d in RESULTS_DIR.iterdir() if d.is_dir() and (d / "responses.jsonl").exists()]
+    if not runs:
+        print("[error] 没有找到任何已完成的实验")
+        return None
+
+    latest_run = max(runs, key=lambda p: p.stat().st_mtime)
+    run_name = latest_run.name
+    print(f"[info] 未指定 run，使用最新实验: {run_name}")
+    return run_name
 
 
 def main():
@@ -29,7 +56,7 @@ def main():
     run_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile（默认 default）")
 
     eval_p = sub.add_parser("eval", help="评测实验结果")
-    eval_p.add_argument("run", help="run 名称（YAML key 或自动生成名）")
+    eval_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
 
     import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
     import_p.add_argument("excel", help="Excel 文件路径")
@@ -41,6 +68,13 @@ def main():
     list_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile")
 
     sub.add_parser("show", help="查看结果摘要").add_argument("run", help="run 名称（YAML key 或自动生成名）")
+
+    report_p = sub.add_parser("report", help="生成 HTML 可视化报告")
+    report_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
+    report_p.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+
+    export_p = sub.add_parser("export", help="导出 Excel 文件")
+    export_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
 
     args = parser.parse_args()
 
@@ -54,7 +88,22 @@ def main():
         )
         asyncio.run(run_experiment(config, run_name))
     elif args.command == "eval":
-        asyncio.run(run_evaluation(args.run))
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+
+        asyncio.run(run_evaluation(run_name))
+        # 评测完成后自动生成报告和导出
+        try:
+            html_path = generate_html_report(run_name, open_browser=True)
+            print(f"[done] HTML 报告已生成 → {html_path}")
+        except Exception as e:
+            print(f"[warn] HTML 报告生成失败: {e}")
+        try:
+            xlsx_path = export_excel(run_name)
+            print(f"[done] Excel 已导出 → {xlsx_path}")
+        except Exception as e:
+            print(f"[warn] Excel 导出失败: {e}")
     elif args.command == "import":
         config = Config()
         import_excel(
@@ -95,6 +144,26 @@ def main():
                     print(f"  {r}{tag}")
     elif args.command == "show":
         _show_experiment(args.run)
+    elif args.command == "report":
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+
+        try:
+            path = generate_html_report(run_name, open_browser=not args.no_open)
+            print(f"[done] HTML 报告已生成 → {path}")
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
+    elif args.command == "export":
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+
+        try:
+            path = export_excel(run_name)
+            print(f"[done] Excel 已导出 → {path}")
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
 
 
 def _show_experiment(run_name: str):

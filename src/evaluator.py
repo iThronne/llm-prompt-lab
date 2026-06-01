@@ -14,6 +14,7 @@ from src.config import ModelConfig
 from src.constants import RESULTS_DIR
 from src.experiment import load_run_meta
 from src.models import create_client, call_model, call_model_stream
+from src.reporter import load_responses, load_scores
 
 JUDGE_SEED = 7
 MAX_RETRIES = 3
@@ -36,7 +37,7 @@ async def run_evaluation(run_name: str):
         print(f"[error] no results found at {responses_path}")
         return
 
-    results = _load_responses(responses_path)
+    results = load_responses(responses_path)
     if not results:
         print(f"[error] no valid results found in {responses_path}")
         return
@@ -45,7 +46,7 @@ async def run_evaluation(run_name: str):
     summary_path = RESULTS_DIR / run_name / "summary.json"
 
     # 加载已有评测结果，支持断点续评
-    existing_scores = _load_scores(scores_path)
+    existing_scores = load_scores(scores_path)
     done_count = len(existing_scores)
     if done_count > 0:
         print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
@@ -104,30 +105,6 @@ async def run_evaluation(run_name: str):
     summary_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[done] evaluation saved → {summary_path}")
     print(f"  Summary: {json.dumps(summary, ensure_ascii=False)}")
-
-
-def _load_responses(path: Path) -> list[dict]:
-    """从 responses.jsonl 加载结果，按 row_index 去重（保留最后一条）。"""
-    responses_by_idx: dict[int, dict] = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                entry = json.loads(line)
-                responses_by_idx[entry["row_index"]] = entry
-    return [responses_by_idx[i] for i in sorted(responses_by_idx)]
-
-
-def _load_scores(scores_path: Path) -> dict[int, dict]:
-    """从 scores.jsonl 加载已有评分，用于断点续评。"""
-    scores: dict[int, dict] = {}
-    if not scores_path.exists():
-        return scores
-    with open(scores_path, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                entry = json.loads(line)
-                scores[entry["row_index"]] = entry
-    return scores
 
 
 def _append_score(scores_path: Path, entry: dict):
