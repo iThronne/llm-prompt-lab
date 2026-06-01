@@ -5,6 +5,7 @@
 dataset: data/example.xlsx
 
 # 评测模型（judge）配置 — 所有 profile 共享
+# 支持 stream: true（流式调用）和 use_proxy: true（代理 + 禁用 SSL）
 judge:
   model:
     provider: ali
@@ -40,4 +41,30 @@ profiles:
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
+    prompt: candidate-system-prompt-default.md
+
+  # 流式调用示例：逐 token 接收，适合长文本生成场景。
+  # 额外记录 ttft_ms（首 token 延迟），避免长生成超时。
+  default-stream:
+    candidate:
+      provider: ali
+      model: deepseek-v4-flash
+      base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      api_key_env: CANDIDATE_OPENAI_API_KEY
+      temperature: 0.7
+      max_tokens: 1024
+      stream: true
+    prompt: candidate-system-prompt-default.md
+
+  # 代理调用示例：通过 PROXY_URL 访问 OpenAI 官方 API。
+  # use_proxy=true 时自动禁用 SSL 验证，代理地址从 .env 的 PROXY_URL 读取。
+  default-proxy:
+    candidate:
+      provider: ali
+      model: deepseek-v4-flash
+      base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      api_key_env: CANDIDATE_OPENAI_API_KEY
+      temperature: 0.7
+      max_tokens: 1024
+      use_proxy: true
     prompt: candidate-system-prompt-default.md

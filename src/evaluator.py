@@ -13,7 +13,7 @@ from tqdm import tqdm
 from src.config import ModelConfig
 from src.constants import RESULTS_DIR
 from src.experiment import load_run_meta
-from src.models import create_client
+from src.models import create_client, call_model, call_model_stream
 
 JUDGE_SEED = 7
 MAX_RETRIES = 3
@@ -66,13 +66,12 @@ async def run_evaluation(run_name: str):
         score_entry = None
         for attempt in range(1 + MAX_RETRIES):
             try:
-                judge_resp = await client.chat.completions.create(
-                    model=judge_model_cfg.model,
-                    messages=messages,
-                    temperature=0,
-                    seed=JUDGE_SEED,
-                )
-                content = judge_resp.choices[0].message.content or ""
+                request = {"messages": messages, "seed": JUDGE_SEED}
+                if judge_model_cfg.stream:
+                    response_dict, _, _ = await call_model_stream(client, judge_model_cfg, request)
+                else:
+                    response_dict, _ = await call_model(client, judge_model_cfg, request)
+                content = response_dict["choices"][0]["message"]["content"] or ""
                 parsed = _parse_judge_output(content)
                 score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200],
                                **parsed}

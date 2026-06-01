@@ -19,7 +19,7 @@ from tqdm import tqdm
 from src.config import Config, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import load_dataset, render_request
-from src.models import create_client, call_model
+from src.models import create_client, call_model, call_model_stream
 
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
@@ -135,9 +135,13 @@ async def run_experiment(config: Config, run_name: str):
             continue
 
         start = time.monotonic()
+        ttft_ms = None
         for attempt in range(1 + MAX_RETRIES):
             try:
-                response, actual_request = await call_model(client, model_cfg, request)
+                if model_cfg.stream:
+                    response, actual_request, ttft_ms = await call_model_stream(client, model_cfg, request)
+                else:
+                    response, actual_request = await call_model(client, model_cfg, request)
                 break
             except Exception as e:
                 if attempt < MAX_RETRIES:
@@ -160,6 +164,7 @@ async def run_experiment(config: Config, run_name: str):
             "rendered_request": actual_request,
             "response": response,
             "latency_ms": round(latency_ms, 1),
+            "ttft_ms": round(ttft_ms, 1) if ttft_ms is not None else None,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         _append_response(responses_path, result)

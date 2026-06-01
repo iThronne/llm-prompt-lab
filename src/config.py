@@ -39,8 +39,10 @@ class ModelConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 1024
     extra_body: Optional[dict] = None
+    stream: bool = False
+    use_proxy: bool = False
 
-    INFRA_PARAMS: ClassVar[set[str]] = {"provider", "base_url", "api_key_env"}
+    INFRA_PARAMS: ClassVar[set[str]] = {"provider", "base_url", "api_key_env", "stream", "use_proxy"}
 
     @property
     def call_params(self) -> dict:
