@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import ClassVar, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CONFIG_DIR = Path("config")
 
@@ -28,9 +28,12 @@ class ModelConfig(BaseModel):
     """模型连接配置。
 
     标准 OpenAI SDK 参数直接定义（model, temperature, max_tokens 等）。
+    通过指定 extra="allow"，未显式定义的采样参数（top_p, min_p 等）也会透传给 API。
     非标准 API 参数（如 chat_template_kwargs）放在 extra_body 下，
     SDK 会将其展开到 HTTP 请求体顶层，与标准参数并列。
     """
+
+    model_config = ConfigDict(extra="allow")
 
     provider: str
     model: str
