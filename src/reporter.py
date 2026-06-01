@@ -85,7 +85,7 @@ def _enrich_analysis(analysis: str, scores: dict, dim_name_map: dict, dim_name_r
         return match.group(0)
 
     # 匹配模式：维度中文名 + 可选的（N分）+ 冒号
-    pattern = r"(相关性|事实性|流畅性|结构化|综合)(?:（\d+分）)?："
+    pattern = r"(相关性|事实性|流畅性|结构化|实时性|本地化|综合)(?:（\d+分）)?："
     return re.sub(pattern, replace_dim, analysis)
 
 
@@ -130,6 +130,8 @@ def generate_html_report(run_name: str, open_browser: bool = True) -> Path:
         "factuality": "事实性",
         "fluency": "流畅性",
         "structure": "结构化",
+        "timeliness": "实时性",
+        "localization": "本地化",
         "overall": "综合"
     }
     dim_name_reverse = {v: k for k, v in dim_name_map.items()}

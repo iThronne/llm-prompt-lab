@@ -60,9 +60,12 @@ async def run_evaluation(run_name: str):
         if row_idx in existing_scores:
             continue
 
-        # 提取回复文本
+        # 提取回复文本和上下文信息
         response_text = _extract_response_text(r["response"])
-        messages = _build_judge_messages(system_prompt, r["query"], response_text)
+        messages = _build_judge_messages(
+            system_prompt, r["query"], response_text,
+            language=r.get("language"), location=r.get("location"),
+        )
 
         score_entry = None
         for attempt in range(1 + MAX_RETRIES):
@@ -114,15 +117,30 @@ def _append_score(scores_path: Path, entry: dict):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def _build_judge_messages(system_prompt: str, query: str, response: str) -> list[dict]:
+def _build_judge_messages(
+    system_prompt: str, query: str, response: str,
+    language: str | None = None, location: str | None = None,
+) -> list[dict]:
     """构建 judge API 调用的 messages。
 
     Args:
         system_prompt: 完整的评分标准（来自 judge prompt 文件）
         query: 用户问题
         response: 模型回复
+        language: 用户语言，用于评测本地化维度
+        location: 用户位置，用于评测本地化维度
     """
     user_content = f"## 待评测内容\n\n**用户问题：**\n{query}\n\n**AI 回复：**\n{response}"
+
+    # 在待评测内容前添加用户上下文（语言、位置）
+    context_parts = []
+    if language:
+        context_parts.append(f"语言：{language}")
+    if location:
+        context_parts.append(f"位置：{location}")
+    if context_parts:
+        user_content = "**用户上下文：**\n" + "\n".join(context_parts) + "\n\n" + user_content
+
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},

@@ -12,13 +12,31 @@ from jinja2 import Template
 
 
 def load_dataset(excel_path: str) -> list[dict]:
-    """从 Excel 加载数据集，返回 list[dict]，每项含 query 和 api_json 字符串。"""
+    """从 Excel 加载数据集，返回 list[dict]。
+
+    必选列：query, api_json
+    可选列：language, location（用于 locale 上下文注入）
+    """
     df = pd.read_excel(excel_path)
     if "query" not in df.columns:
         raise ValueError(f"Excel file '{excel_path}' must have a 'query' column")
     if "api_json" not in df.columns:
         raise ValueError(f"Excel file '{excel_path}' must have an 'api_json' column")
-    return df[["query", "api_json"]].to_dict("records")
+
+    # 基础列
+    cols = ["query", "api_json"]
+    # 可选 locale 列
+    for col in ("language", "location"):
+        if col in df.columns:
+            cols.append(col)
+
+    records = df[cols].to_dict("records")
+    # 填充空值（NaN → None）
+    for r in records:
+        for key in ("language", "location"):
+            if key not in r or pd.isna(r.get(key)):
+                r[key] = None
+    return records
 
 
 def render_request(api_json_str: str, variables: dict) -> dict:

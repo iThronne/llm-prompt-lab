@@ -13,7 +13,7 @@ judge:
     base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: JUDGE_OPENAI_API_KEY
   prompt: judge-system-prompt-default.md
-  dimensions: [ "relevance", "factuality", "fluency", "structure", "overall" ]
+  dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "overall" ]
 
 # ── Profiles ────────────────────────────────────────────────────────
 # 每个 profile 包含完整的 candidate 配置和 prompt。

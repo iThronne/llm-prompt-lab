@@ -126,8 +126,18 @@ async def run_experiment(config: Config, run_name: str):
         if checkpoint.is_done(idx):
             continue
 
+        # 构建带 locale 的 system prompt（逐行注入语言和位置信息）
+        system_prompt = exp.prompt
+        locale_parts = []
+        if row.get("language"):
+            locale_parts.append(f"语言：{row['language']}")
+        if row.get("location"):
+            locale_parts.append(f"位置：{row['location']}")
+        if locale_parts:
+            system_prompt += "\n\n当前用户信息：\n" + "\n".join(locale_parts)
+
         # Jinja2 模板变量：prompt 内容 + 数据行中的 query
-        variables = {"system_prompt": exp.prompt, "query": row["query"]}
+        variables = {"system_prompt": system_prompt, "query": row["query"]}
         try:
             request = render_request(row["api_json"], variables)
         except Exception as e:
@@ -161,6 +171,8 @@ async def run_experiment(config: Config, run_name: str):
             "row_index": idx,
             "model": model_cfg.model,
             "query": row["query"],
+            "language": row.get("language"),
+            "location": row.get("location"),
             "rendered_request": actual_request,
             "response": response,
             "latency_ms": round(latency_ms, 1),
