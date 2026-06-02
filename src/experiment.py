@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from src.config import Config, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
-from src.dataset import load_dataset, render_messages, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
+from src.dataset import load_dataset, build_messages, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
 from src.models import create_client, call_model, call_model_stream
 
 MAX_RETRIES = 3
@@ -139,13 +139,18 @@ async def run_experiment(config: Config, run_name: str):
         if locale_parts:
             system_prompt += "\n\n当前用户信息：\n" + "\n".join(locale_parts)
 
-        # Jinja2 模板变量：prompt 内容 + 数据行中的 query
-        variables = {"system_prompt": system_prompt, "query": row["query"]}
+        # 解析 api_json 并注入 system prompt（强制覆盖）
         try:
-            messages = render_messages(row["api_json"], variables)
+            messages = build_messages(row["api_json"], system_prompt)
         except Exception as e:
-            tqdm.write(f"[error] row {idx}: template render failed: {e}")
+            tqdm.write(f"[error] row {idx}: build_messages failed: {e}")
             continue
+
+        # 提取完整用户消息（含时间戳等信息，用于 judge 评测）
+        user_content = next(
+            (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+            row["query"]
+        )
 
         start = time.monotonic()
         ttft_ms = None
@@ -174,6 +179,7 @@ async def run_experiment(config: Config, run_name: str):
             "row_index": idx,
             "model": model_cfg.model,
             "query": row["query"],
+            "user_content": user_content,
             "language": row.get("language"),
             "location": row.get("location"),
             "rendered_request": actual_request,

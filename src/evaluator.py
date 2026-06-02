@@ -76,18 +76,19 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
                 row_idx = r["row_index"]
                 response_text = _extract_response_text(r["response"])
                 messages = _build_judge_messages(
-                    system_prompt, r["query"], response_text,
+                    system_prompt, r["user_content"], response_text,
                     language=r.get("language"), location=r.get("location"),
                 )
 
                 score_entry = None
+                # 通过 model_copy 注入 seed 参数（保证评测可复现）
+                seeded_cfg = judge_model_cfg.model_copy(update={"seed": JUDGE_SEED})
                 for attempt in range(1 + MAX_RETRIES):
                     try:
-                        request = {"messages": messages, "seed": JUDGE_SEED}
                         if judge_model_cfg.stream:
-                            response_dict, _, _ = await call_model_stream(client, judge_model_cfg, request)
+                            response_dict, _, _ = await call_model_stream(client, seeded_cfg, messages)
                         else:
-                            response_dict, _ = await call_model(client, judge_model_cfg, request)
+                            response_dict, _ = await call_model(client, seeded_cfg, messages)
 
                         finish_reason = response_dict["choices"][0].get("finish_reason")
                         if finish_reason == "length":
@@ -155,19 +156,19 @@ def _sort_scores(scores_path: Path, existing_scores: dict):
 
 
 def _build_judge_messages(
-    system_prompt: str, query: str, response: str,
+    system_prompt: str, user_message: str, response: str,
     language: str | None = None, location: str | None = None,
 ) -> list[dict]:
     """构建 judge API 调用的 messages。
 
     Args:
         system_prompt: 完整的评分标准（来自 judge prompt 文件）
-        query: 用户问题
+        user_message: 发送给候选模型的完整用户消息（含时间戳等信息）
         response: 模型回复
         language: 用户语言，用于评测本地化维度
         location: 用户位置，用于评测本地化维度
     """
-    user_content = f"## 待评测内容\n\n**用户问题：**\n{query}\n\n**AI 回复：**\n{response}"
+    user_content = f"## 待评测内容\n\n**用户消息：**\n{user_message}\n\n**AI 回复：**\n{response}"
 
     # 在待评测内容前添加用户上下文（语言、位置）
     context_parts = []
