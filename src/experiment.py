@@ -146,9 +146,6 @@ async def run_experiment(config: Config, run_name: str):
             tqdm.write(f"[error] row {idx}: build_messages failed: {e}")
             continue
 
-        # 提取候选模型的完整输入（非 system 消息，含用户消息、工具调用、搜索结果等）
-        candidate_input = [m for m in messages if m.get("role") != "system"]
-
         start = time.monotonic()
         ttft_ms = None
         for attempt in range(1 + MAX_RETRIES):
@@ -176,7 +173,6 @@ async def run_experiment(config: Config, run_name: str):
             "row_index": idx,
             "model": model_cfg.model,
             "query": row["query"],
-            "candidate_input": candidate_input,
             "language": row.get("language"),
             "location": row.get("location"),
             "rendered_request": actual_request,

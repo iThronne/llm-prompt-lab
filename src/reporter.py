@@ -97,17 +97,21 @@ def _extract_usage(response: dict) -> dict:
         return {}
 
 
-def _extract_search_results(candidate_input: list[dict] | None) -> str:
-    """从 candidate_input 中提取搜索结果（tool_calls 和 tool 消息）。
+def _extract_search_results(rendered_request: dict | None) -> str:
+    """从 rendered_request 中提取搜索结果（tool_calls 和 tool 消息）。
 
     Returns:
         格式化的搜索结果文本，如无搜索则返回空字符串
     """
-    if not candidate_input:
+    if not rendered_request:
+        return ""
+
+    messages = rendered_request.get("messages", [])
+    if not messages:
         return ""
 
     parts = []
-    for msg in candidate_input:
+    for msg in messages:
         role = msg.get("role")
         if role == "assistant" and msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
@@ -174,7 +178,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning": _extract_reasoning_text(response),
-            "search_results": _extract_search_results(r.get("candidate_input")),
+            "search_results": _extract_search_results(r.get("rendered_request")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
@@ -288,7 +292,7 @@ def export_excel(run_name: str) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning_content": _extract_reasoning_text(response),
-            "search_results": _extract_search_results(r.get("candidate_input")),
+            "search_results": _extract_search_results(r.get("rendered_request")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),

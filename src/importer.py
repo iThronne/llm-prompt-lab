@@ -58,25 +58,29 @@ def import_excel(
             query_text = str(row[query_col])
             response_text = str(row[response_col])
 
-            # 解析 api_json，提取非 system 消息作为 candidate_input
-            api_json_str = str(row[api_json_col])
-            parsed = json.loads(api_json_str)
-            if isinstance(parsed, list):
-                messages = parsed
-            elif isinstance(parsed, dict) and "messages" in parsed:
-                messages = parsed["messages"]
+            # 解析 api_json，构造 rendered_request
+            api_json_raw = row[api_json_col]
+            if pd.isna(api_json_raw) or not str(api_json_raw).strip():
+                rendered_request = {"messages": []}
             else:
-                raise ValueError(
-                    f"Row {idx}: api_json must be a messages array or an object "
-                    f"with 'messages' key, got: {type(parsed).__name__}"
-                )
-            candidate_input = [m for m in messages if m.get("role") != "system"]
+                parsed = json.loads(str(api_json_raw))
+                if isinstance(parsed, list):
+                    rendered_request = {"messages": parsed}
+                elif isinstance(parsed, dict) and "messages" in parsed:
+                    rendered_request = parsed
+                else:
+                    raise ValueError(
+                        f"Row {idx}: api_json must be a messages array or an object "
+                        f"with 'messages' key, got: {type(parsed).__name__}"
+                    )
 
             record = {
                 "experiment": run_name,
                 "row_index": idx,
                 "query": query_text,
-                "candidate_input": candidate_input,
+                "language": row.get("language") if "language" in df.columns else None,
+                "location": row.get("location") if "location" in df.columns else None,
+                "rendered_request": rendered_request,
                 "response": {
                     "choices": [{"message": {"content": response_text}}]
                 },

@@ -75,8 +75,14 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
             async with semaphore:
                 row_idx = r["row_index"]
                 response_text = _extract_response_text(r["response"])
+
+                # 从 rendered_request 提取非 system 消息
+                rendered_request = r.get("rendered_request", {})
+                all_messages = rendered_request.get("messages", [])
+                candidate_input = [m for m in all_messages if m.get("role") != "system"]
+
                 messages = _build_judge_messages(
-                    system_prompt, r["candidate_input"], response_text,
+                    system_prompt, candidate_input, response_text,
                     language=r.get("language"), location=r.get("location"),
                 )
 
