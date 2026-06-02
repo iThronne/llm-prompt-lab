@@ -121,7 +121,7 @@ def _extract_search_results(candidate_input: list[dict] | None) -> str:
     return "\n\n".join(parts)
 
 
-def generate_html_report(run_name: str, open_browser: bool = True) -> Path:
+def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     """生成 HTML 报告。
 
     Args:
