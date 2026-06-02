@@ -97,7 +97,7 @@ def main():
         asyncio.run(run_evaluation(run_name, concurrency=args.concurrency))
         # 评测完成后自动生成报告和导出
         try:
-            html_path = generate_html_report(run_name, open_browser=True)
+            html_path = generate_html_report(run_name)
             print(f"[done] HTML 报告已生成 → {html_path}")
         except Exception as e:
             print(f"[warn] HTML 报告生成失败: {e}")
