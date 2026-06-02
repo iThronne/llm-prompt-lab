@@ -10,6 +10,7 @@ import pandas as pd
 
 from src.config import Config
 from src.constants import RESULTS_DIR, META_FILE
+from src.dataset import copy_dataset
 
 
 def import_excel(
@@ -45,6 +46,9 @@ def import_excel(
     result_dir = RESULTS_DIR / run_name
     result_dir.mkdir(parents=True, exist_ok=True)
 
+    # 保存数据集到 run 目录（仅保留用到的列，保证可追溯）
+    saved_dataset_path = copy_dataset(excel_path, result_dir, [query_col, response_col])
+
     # 写入 responses.jsonl
     responses_path = result_dir / "responses.jsonl"
     with open(responses_path, "w", encoding="utf-8") as f:
@@ -68,7 +72,8 @@ def import_excel(
         "source": "imported",
         "prompt_name": exp.prompt_name,
         "prompt_content": exp.prompt,
-        "dataset": excel_path,
+        "dataset": str(saved_dataset_path),
+        "dataset_content_hash": Config.hash_file(saved_dataset_path),
         "judge": exp.judge.model_dump() if exp.judge else None,
     }
     meta_path = result_dir / META_FILE

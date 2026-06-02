@@ -6,9 +6,43 @@ api_json 中的任意字段都可以使用 {{ var_name }} Jinja2 占位符。
 """
 
 import json
+from pathlib import Path
 
 import pandas as pd
 from jinja2 import Template
+
+# 数据集必需列
+REQUIRED_COLUMNS = ["query", "api_json"]
+# 数据集可选列（用于 locale 上下文注入）
+OPTIONAL_COLUMNS = ["language", "location"]
+
+
+def copy_dataset(src_path: str, dest_path: Path, columns: list[str]) -> Path:
+    """复制数据集到指定路径，仅保留指定的列。
+
+    Args:
+        src_path: 源 Excel 文件路径
+        dest_path: 目标文件路径（目录或完整路径）
+        columns: 要保留的列名列表
+
+    Returns:
+        实际写入的文件路径
+    """
+    src = Path(src_path)
+    dest = Path(dest_path)
+
+    # 如果 dest_path 是目录，使用源文件名
+    if dest.is_dir() or not dest.suffix:
+        dest = dest / src.name
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_excel(src_path)
+    # 只保留存在的列
+    cols_to_keep = [c for c in columns if c in df.columns]
+    df[cols_to_keep].to_excel(dest, index=False)
+
+    return dest
 
 
 def load_dataset(excel_path: str) -> list[dict]:
@@ -18,18 +52,11 @@ def load_dataset(excel_path: str) -> list[dict]:
     可选列：language, location（用于 locale 上下文注入）
     """
     df = pd.read_excel(excel_path)
-    if "query" not in df.columns:
-        raise ValueError(f"Excel file '{excel_path}' must have a 'query' column")
-    if "api_json" not in df.columns:
-        raise ValueError(f"Excel file '{excel_path}' must have an 'api_json' column")
+    for col in REQUIRED_COLUMNS:
+        if col not in df.columns:
+            raise ValueError(f"Excel file '{excel_path}' must have a '{col}' column")
 
-    # 基础列
-    cols = ["query", "api_json"]
-    # 可选 locale 列
-    for col in ("language", "location"):
-        if col in df.columns:
-            cols.append(col)
-
+    cols = list(REQUIRED_COLUMNS) + [c for c in OPTIONAL_COLUMNS if c in df.columns]
     records = df[cols].to_dict("records")
     # 填充空值（NaN → None）
     for r in records:

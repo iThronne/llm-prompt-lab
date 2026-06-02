@@ -9,7 +9,6 @@
 
 import asyncio
 import json
-import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +17,7 @@ from tqdm import tqdm
 
 from src.config import Config, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
-from src.dataset import load_dataset, render_request
+from src.dataset import load_dataset, render_request, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
 from src.models import create_client, call_model, call_model_stream
 
 MAX_RETRIES = 3
@@ -29,16 +28,20 @@ def save_run_meta(run_name: str, experiment: ExperimentConfig, profile_name: str
     """Save run metadata (full experiment config snapshot) for reproducibility."""
     result_dir = RESULTS_DIR / run_name
     result_dir.mkdir(parents=True, exist_ok=True)
+
+    # 复制数据集（仅保留用到的列）
     dataset_path = Path(experiment.dataset)
-    shutil.copy2(dataset_path, result_dir / dataset_path.name)
+    all_cols = list(REQUIRED_COLUMNS) + list(OPTIONAL_COLUMNS)
+    saved_dataset = copy_dataset(experiment.dataset, result_dir, all_cols)
+
     meta = {
         "run_name": run_name,
         "profile": profile_name,
         "candidate": experiment.candidate.model_dump(),
         "prompt_name": experiment.prompt_name,
         "prompt_content": experiment.prompt,
-        "dataset": experiment.dataset,
-        "dataset_content_hash": Config.hash_file(dataset_path),
+        "dataset": str(saved_dataset),
+        "dataset_content_hash": Config.hash_file(saved_dataset),
         "judge": experiment.judge.model_dump() if experiment.judge else None,
     }
     meta_path = result_dir / META_FILE
