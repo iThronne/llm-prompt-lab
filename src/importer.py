@@ -53,6 +53,7 @@ def import_excel(
 
     # 写入 responses.jsonl
     responses_path = result_dir / "responses.jsonl"
+    error_count = 0
     with open(responses_path, "w", encoding="utf-8") as f:
         for idx, row in df.iterrows():
             query_text = str(row[query_col])
@@ -60,19 +61,25 @@ def import_excel(
 
             # 解析 api_json，构造 rendered_request
             api_json_raw = row[api_json_col]
+            rendered_request = {"messages": []}
             if pd.isna(api_json_raw) or not str(api_json_raw).strip():
-                rendered_request = {"messages": []}
+                pass  # 空值，保留空 messages
             else:
-                parsed = json.loads(str(api_json_raw))
-                if isinstance(parsed, list):
-                    rendered_request = {"messages": parsed}
-                elif isinstance(parsed, dict) and "messages" in parsed:
-                    rendered_request = parsed
-                else:
-                    raise ValueError(
-                        f"Row {idx}: api_json must be a messages array or an object "
-                        f"with 'messages' key, got: {type(parsed).__name__}"
-                    )
+                try:
+                    parsed = json.loads(str(api_json_raw))
+                    if isinstance(parsed, list):
+                        rendered_request = {"messages": parsed}
+                    elif isinstance(parsed, dict) and "messages" in parsed:
+                        rendered_request = parsed
+                    else:
+                        rendered_request = {
+                            "error": f"api_json must be a messages array or an object "
+                                     f"with 'messages' key, got: {type(parsed).__name__}"
+                        }
+                        error_count += 1
+                except json.JSONDecodeError as e:
+                    rendered_request = {"error": f"api_json parse error: {e}"}
+                    error_count += 1
 
             record = {
                 "experiment": run_name,
@@ -86,6 +93,9 @@ def import_excel(
                 },
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    if error_count > 0:
+        print(f"[warn] {error_count} rows had invalid api_json")
 
     # 写入 meta.json
     # 注意：导入的数据并非由当前配置的 candidate 模型产生，故不记录 candidate 信息

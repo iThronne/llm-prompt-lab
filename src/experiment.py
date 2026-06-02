@@ -144,6 +144,22 @@ async def run_experiment(config: Config, run_name: str):
             messages = build_messages(row["api_json"], system_prompt)
         except Exception as e:
             tqdm.write(f"[error] row {idx}: build_messages failed: {e}")
+            error_result = {
+                "experiment": run_name,
+                "row_index": idx,
+                "model": model_cfg.model,
+                "query": row["query"],
+                "language": row.get("language"),
+                "location": row.get("location"),
+                "rendered_request": {"error": f"api_json parse error: {e}"},
+                "response": {"choices": [{"message": {"content": ""}}]},
+                "latency_ms": 0,
+                "ttft_ms": None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            _append_response(responses_path, error_result)
+            checkpoint.mark_done(idx)
+            pbar.update(1)
             continue
 
         start = time.monotonic()
