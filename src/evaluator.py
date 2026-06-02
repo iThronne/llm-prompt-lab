@@ -118,6 +118,9 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
         await asyncio.gather(*[_evaluate_one(r) for r in pending])
         pbar.close()
 
+    # 按 row_index 排序后重写 scores.jsonl
+    _sort_scores(scores_path, existing_scores)
+
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
     summary = _compute_summary(all_scores, judge_data["dimensions"])
@@ -139,6 +142,16 @@ def _append_score(scores_path: Path, entry: dict):
     scores_path.parent.mkdir(parents=True, exist_ok=True)
     with open(scores_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _sort_scores(scores_path: Path, existing_scores: dict):
+    """按 row_index 排序后重写 scores.jsonl。"""
+    if not scores_path.exists() or not existing_scores:
+        return
+
+    with open(scores_path, "w", encoding="utf-8") as f:
+        for row_idx in sorted(existing_scores):
+            f.write(json.dumps(existing_scores[row_idx], ensure_ascii=False) + "\n")
 
 
 def _build_judge_messages(
