@@ -18,6 +18,7 @@ def import_excel(
         config: Config,
         query_col: str = "query",
         response_col: str = "response",
+        profile_name: str = "",
 ):
     """从 Excel 导入数据，生成可供 eval 使用的 run 目录。
 
@@ -27,6 +28,7 @@ def import_excel(
         config: 配置对象（用于获取 judge 配置）
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
+        profile_name: 使用的 profile 名称
     """
     exp = config.get_experiment()
 
@@ -62,6 +64,7 @@ def import_excel(
     # 注意：导入的数据并非由当前配置的 candidate 模型产生，故不记录 candidate 信息
     meta = {
         "run_name": run_name,
+        "profile": profile_name,
         "source": "imported",
         "prompt_name": exp.prompt_name,
         "prompt_content": exp.prompt,
