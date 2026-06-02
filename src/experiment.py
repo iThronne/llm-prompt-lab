@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from src.config import Config, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
-from src.dataset import load_dataset, render_request, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
+from src.dataset import load_dataset, render_messages, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
 from src.models import create_client, call_model, call_model_stream
 
 MAX_RETRIES = 3
@@ -142,7 +142,7 @@ async def run_experiment(config: Config, run_name: str):
         # Jinja2 模板变量：prompt 内容 + 数据行中的 query
         variables = {"system_prompt": system_prompt, "query": row["query"]}
         try:
-            request = render_request(row["api_json"], variables)
+            messages = render_messages(row["api_json"], variables)
         except Exception as e:
             tqdm.write(f"[error] row {idx}: template render failed: {e}")
             continue
@@ -152,9 +152,9 @@ async def run_experiment(config: Config, run_name: str):
         for attempt in range(1 + MAX_RETRIES):
             try:
                 if model_cfg.stream:
-                    response, actual_request, ttft_ms = await call_model_stream(client, model_cfg, request)
+                    response, actual_request, ttft_ms = await call_model_stream(client, model_cfg, messages)
                 else:
-                    response, actual_request = await call_model(client, model_cfg, request)
+                    response, actual_request = await call_model(client, model_cfg, messages)
                 break
             except Exception as e:
                 if attempt < MAX_RETRIES:

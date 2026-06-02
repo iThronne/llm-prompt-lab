@@ -40,34 +40,39 @@ def create_client(model_config: ModelConfig) -> AsyncOpenAI:
     return AsyncOpenAI(**kwargs)
 
 
-async def call_model(client: AsyncOpenAI, model_config: ModelConfig, request: dict) -> tuple[dict, dict]:
+async def call_model(client: AsyncOpenAI, model_config: ModelConfig, messages: list[dict]) -> tuple[dict, dict]:
     """调用模型 API。
 
     Args:
         client: AsyncOpenAI 客户端实例
-        model_config: 模型配置，call_params 作为默认值（优先级高于 request）
-        request: 渲染后的 API 请求 dict，model_config 中未定义的字段可由此补充
+        model_config: 模型配置，call_params 提供 model、temperature 等参数
+        messages: 渲染后的 messages 列表
 
     Returns:
         (response_dict, actual_kwargs): API 响应 + 实际发送的完整请求参数
     """
-    kwargs = {**request, **model_config.call_params}
+    kwargs = {**model_config.call_params, "messages": messages}
 
     response = await client.chat.completions.create(**kwargs)
     return response.model_dump(), kwargs
 
 
 async def call_model_stream(
-    client: AsyncOpenAI, model_config: ModelConfig, request: dict,
+    client: AsyncOpenAI, model_config: ModelConfig, messages: list[dict],
 ) -> tuple[dict, dict, float | None]:
     """流式调用模型 API，逐 chunk 收集内容并组装为与非流式相同的响应格式。
 
     额外返回 TTFT（首 token 延迟，毫秒），用于性能分析。
 
+    Args:
+        client: AsyncOpenAI 客户端实例
+        model_config: 模型配置，call_params 提供 model、temperature 等参数
+        messages: 渲染后的 messages 列表
+
     Returns:
         (response_dict, actual_kwargs, ttft_ms)
     """
-    kwargs = {**request, **model_config.call_params, "stream": True}
+    kwargs = {**model_config.call_params, "messages": messages, "stream": True}
 
     start_time = time.monotonic()
     stream = await client.chat.completions.create(**kwargs)
