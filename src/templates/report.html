@@ -410,6 +410,7 @@
         const ROWS_DATA = {{ rows | tojson }};
         const SCORE_SUMMARY = {{ score_summary | tojson }};
         const DIMENSIONS = {{ dimensions | tojson }};
+        const DIM_LABELS = {{ dim_labels | tojson }};
         const HAS_SCORES = {{ has_scores | tojson }};
         const HAS_TTFT = {{ has_ttft | tojson }};
 
@@ -691,7 +692,7 @@
         // 评分雷达图
         const scoreLabels = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
-            .map(d => `${d}（${SCORE_SUMMARY['avg_' + d]}）`);
+            .map(d => DIM_LABELS[d] || d);
         const scoreValues = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
             .map(d => SCORE_SUMMARY['avg_' + d]);
