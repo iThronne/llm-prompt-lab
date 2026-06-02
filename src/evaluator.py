@@ -77,6 +77,12 @@ async def run_evaluation(run_name: str):
                     response_dict, _, _ = await call_model_stream(client, judge_model_cfg, request)
                 else:
                     response_dict, _ = await call_model(client, judge_model_cfg, request)
+
+                # 检查是否因长度限制被截断
+                finish_reason = response_dict["choices"][0].get("finish_reason")
+                if finish_reason == "length":
+                    raise ValueError("输出被截断 (finish_reason=length)，JSON 不完整")
+
                 content = response_dict["choices"][0]["message"]["content"] or ""
                 parsed = _parse_judge_output(content, dims)
                 score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200],

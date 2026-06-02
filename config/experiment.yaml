@@ -12,6 +12,7 @@ judge:
     model: qwen3.7-max
     base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: JUDGE_OPENAI_API_KEY
+    max_tokens: 4096
   prompt: judge-system-prompt-default.md
   dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "overall" ]
 
