@@ -57,6 +57,7 @@ def main():
 
     eval_p = sub.add_parser("eval", help="评测实验结果")
     eval_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
+    eval_p.add_argument("--concurrency", "-c", type=int, default=1, help="并发评测数（默认 1，即串行）")
 
     import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
     import_p.add_argument("excel", help="Excel 文件路径")
@@ -93,7 +94,7 @@ def main():
         if not run_name:
             return
 
-        asyncio.run(run_evaluation(run_name))
+        asyncio.run(run_evaluation(run_name, concurrency=args.concurrency))
         # 评测完成后自动生成报告和导出
         try:
             html_path = generate_html_report(run_name, open_browser=True)

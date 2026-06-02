@@ -22,8 +22,13 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
 
 
-async def run_evaluation(run_name: str):
-    """对实验结果进行 LLM-as-Judge 评测。"""
+async def run_evaluation(run_name: str, concurrency: int = 1):
+    """对实验结果进行 LLM-as-Judge 评测。
+
+    Args:
+        run_name: 实验 run 名称
+        concurrency: 并发评测数，默认 1（串行）
+    """
     meta = load_run_meta(run_name)
     if not meta.get("judge"):
         print(f"[skip] run '{run_name}' has no judge config in meta.json")
@@ -52,57 +57,67 @@ async def run_evaluation(run_name: str):
     if done_count > 0:
         print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
 
-    # Judge prompt 作为 system 消息（评分标准不变，user 消息每次不同）
-    system_prompt = judge_data["prompt"]
-    pbar = tqdm(total=len(results), initial=done_count, desc=f"eval/{run_name}", unit="item")
+    # 筛选待评测的条目
+    pending = [r for r in results if r["row_index"] not in existing_scores]
 
-    for r in results:
-        row_idx = r["row_index"]
-        if row_idx in existing_scores:
-            continue
-
-        # 提取回复文本和上下文信息
-        response_text = _extract_response_text(r["response"])
-        messages = _build_judge_messages(
-            system_prompt, r["query"], response_text,
-            language=r.get("language"), location=r.get("location"),
-        )
-
-        score_entry = None
+    if pending:
+        system_prompt = judge_data["prompt"]
         dims = judge_data["dimensions"]
-        for attempt in range(1 + MAX_RETRIES):
-            try:
-                request = {"messages": messages, "seed": JUDGE_SEED}
-                if judge_model_cfg.stream:
-                    response_dict, _, _ = await call_model_stream(client, judge_model_cfg, request)
-                else:
-                    response_dict, _ = await call_model(client, judge_model_cfg, request)
+        semaphore = asyncio.Semaphore(concurrency)
+        write_lock = asyncio.Lock()
+        pbar = tqdm(total=len(results), initial=done_count, desc=f"eval/{run_name}", unit="item")
 
-                # 检查是否因长度限制被截断
-                finish_reason = response_dict["choices"][0].get("finish_reason")
-                if finish_reason == "length":
-                    raise ValueError("输出被截断 (finish_reason=length)，JSON 不完整")
+        if concurrency > 1:
+            print(f"[info] 并发评测: concurrency={concurrency}")
 
-                content = response_dict["choices"][0]["message"]["content"] or ""
-                parsed = _parse_judge_output(content, dims)
-                score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200],
-                               **parsed}
-                break
-            except Exception as e:
-                if attempt < MAX_RETRIES:
-                    delay = RETRY_BASE_DELAY * (2 ** attempt)
-                    tqdm.write(f"[warn] row {row_idx} parse failed (attempt {attempt + 1}), retrying: {e}")
-                    await asyncio.sleep(delay)
-                else:
-                    tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
-                    score_entry = {"row_index": row_idx, "error": str(e)}
+        async def _evaluate_one(r: dict):
+            """评测单条数据，带并发控制和重试。"""
+            async with semaphore:
+                row_idx = r["row_index"]
+                response_text = _extract_response_text(r["response"])
+                messages = _build_judge_messages(
+                    system_prompt, r["query"], response_text,
+                    language=r.get("language"), location=r.get("location"),
+                )
 
-        if score_entry is not None:
-            existing_scores[row_idx] = score_entry
-            _append_score(scores_path, score_entry)
-        pbar.update(1)
+                score_entry = None
+                for attempt in range(1 + MAX_RETRIES):
+                    try:
+                        request = {"messages": messages, "seed": JUDGE_SEED}
+                        if judge_model_cfg.stream:
+                            response_dict, _, _ = await call_model_stream(client, judge_model_cfg, request)
+                        else:
+                            response_dict, _ = await call_model(client, judge_model_cfg, request)
 
-    pbar.close()
+                        finish_reason = response_dict["choices"][0].get("finish_reason")
+                        if finish_reason == "length":
+                            raise ValueError("输出被截断 (finish_reason=length)，JSON 不完整")
+
+                        content = response_dict["choices"][0]["message"]["content"] or ""
+                        parsed = _parse_judge_output(content, dims)
+                        score_entry = {
+                            "row_index": row_idx, "query": r["query"],
+                            "response_summary": response_text[:200], **parsed,
+                        }
+                        break
+                    except Exception as e:
+                        if attempt < MAX_RETRIES:
+                            delay = RETRY_BASE_DELAY * (2 ** attempt)
+                            tqdm.write(f"[warn] row {row_idx} parse failed (attempt {attempt + 1}), retrying: {e}")
+                            await asyncio.sleep(delay)
+                        else:
+                            tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
+                            score_entry = {"row_index": row_idx, "error": str(e)}
+
+                if score_entry is not None:
+                    async with write_lock:
+                        existing_scores[row_idx] = score_entry
+                        _append_score(scores_path, score_entry)
+                pbar.update(1)
+
+        await asyncio.gather(*[_evaluate_one(r) for r in pending])
+        pbar.close()
+
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
     summary = _compute_summary(all_scores, judge_data["dimensions"])
