@@ -19,6 +19,7 @@ def import_excel(
         config: Config,
         query_col: str = "query",
         response_col: str = "response",
+        api_json_col: str = "api_json",
         profile_name: str = "",
 ):
     """从 Excel 导入数据，生成可供 eval 使用的 run 目录。
@@ -29,13 +30,14 @@ def import_excel(
         config: 配置对象（用于获取 judge 配置）
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
+        api_json_col: api_json 列名，默认 "api_json"
         profile_name: 使用的 profile 名称
     """
     exp = config.get_experiment()
 
     # 读取 Excel
     df = pd.read_excel(excel_path)
-    for col in (query_col, response_col):
+    for col in (query_col, response_col, api_json_col):
         if col not in df.columns:
             raise ValueError(
                 f"Excel file '{excel_path}' must have a '{col}' column. "
@@ -47,17 +49,34 @@ def import_excel(
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 保存数据集到 run 目录（仅保留用到的列，保证可追溯）
-    saved_dataset_path = copy_dataset(excel_path, result_dir, [query_col, response_col])
+    saved_dataset_path = copy_dataset(excel_path, result_dir, [query_col, response_col, api_json_col])
 
     # 写入 responses.jsonl
     responses_path = result_dir / "responses.jsonl"
     with open(responses_path, "w", encoding="utf-8") as f:
         for idx, row in df.iterrows():
+            query_text = str(row[query_col])
             response_text = str(row[response_col])
+
+            # 解析 api_json，提取非 system 消息作为 candidate_input
+            api_json_str = str(row[api_json_col])
+            parsed = json.loads(api_json_str)
+            if isinstance(parsed, list):
+                messages = parsed
+            elif isinstance(parsed, dict) and "messages" in parsed:
+                messages = parsed["messages"]
+            else:
+                raise ValueError(
+                    f"Row {idx}: api_json must be a messages array or an object "
+                    f"with 'messages' key, got: {type(parsed).__name__}"
+                )
+            candidate_input = [m for m in messages if m.get("role") != "system"]
+
             record = {
                 "experiment": run_name,
                 "row_index": idx,
-                "query": str(row[query_col]),
+                "query": query_text,
+                "candidate_input": candidate_input,
                 "response": {
                     "choices": [{"message": {"content": response_text}}]
                 },
