@@ -97,6 +97,30 @@ def _extract_usage(response: dict) -> dict:
         return {}
 
 
+def _extract_search_results(candidate_input: list[dict] | None) -> str:
+    """从 candidate_input 中提取搜索结果（tool_calls 和 tool 消息）。
+
+    Returns:
+        格式化的搜索结果文本，如无搜索则返回空字符串
+    """
+    if not candidate_input:
+        return ""
+
+    parts = []
+    for msg in candidate_input:
+        role = msg.get("role")
+        if role == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                func = tc.get("function", {})
+                args = func.get("arguments", "")
+                parts.append(f"[搜索关键词]\n{args}")
+        elif role == "tool":
+            content = msg.get("content", "")
+            parts.append(f"[搜索结果]\n{content}")
+
+    return "\n\n".join(parts)
+
+
 def generate_html_report(run_name: str, open_browser: bool = True) -> Path:
     """生成 HTML 报告。
 
@@ -150,6 +174,7 @@ def generate_html_report(run_name: str, open_browser: bool = True) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning": _extract_reasoning_text(response),
+            "search_results": _extract_search_results(r.get("candidate_input")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
@@ -263,6 +288,7 @@ def export_excel(run_name: str) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning_content": _extract_reasoning_text(response),
+            "search_results": _extract_search_results(r.get("candidate_input")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),

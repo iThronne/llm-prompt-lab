@@ -591,6 +591,12 @@
                                 <div class="expand-text">${escapeHtml(row.reasoning)}</div>
                             </div>
                             ` : ''}
+                            ${row.search_results ? `
+                            <div class="expand-section">
+                                <div class="expand-label">搜索结果</div>
+                                <div class="expand-text">${escapeHtmlWithNewlines(row.search_results)}</div>
+                            </div>
+                            ` : ''}
                             ${row.analysis ? `
                             <div class="expand-section">
                                 <div class="expand-label">评分分析</div>
