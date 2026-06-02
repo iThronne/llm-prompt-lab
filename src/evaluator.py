@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from tqdm import tqdm
@@ -68,6 +69,7 @@ async def run_evaluation(run_name: str):
         )
 
         score_entry = None
+        dims = judge_data["dimensions"]
         for attempt in range(1 + MAX_RETRIES):
             try:
                 request = {"messages": messages, "seed": JUDGE_SEED}
@@ -76,13 +78,14 @@ async def run_evaluation(run_name: str):
                 else:
                     response_dict, _ = await call_model(client, judge_model_cfg, request)
                 content = response_dict["choices"][0]["message"]["content"] or ""
-                parsed = _parse_judge_output(content)
+                parsed = _parse_judge_output(content, dims)
                 score_entry = {"row_index": row_idx, "query": r["query"], "response_summary": response_text[:200],
                                **parsed}
                 break
             except Exception as e:
                 if attempt < MAX_RETRIES:
                     delay = RETRY_BASE_DELAY * (2 ** attempt)
+                    tqdm.write(f"[warn] row {row_idx} parse failed (attempt {attempt + 1}), retrying: {e}")
                     await asyncio.sleep(delay)
                 else:
                     tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
@@ -155,18 +158,101 @@ def _extract_response_text(response: dict) -> str:
         return str(response)
 
 
-def _parse_judge_output(content: str) -> dict:
-    """解析 Judge 模型输出的 JSON。"""
-    content = content.strip()
-    # 尝试提取 JSON 块（可能被 markdown 代码块包裹）
+def _extract_json_string(content: str) -> str:
+    """从模型输出中提取 JSON 字符串，尽可能容错。
+
+    按优先级尝试：
+    1. markdown ```json``` 代码块
+    2. 首个 { 到末尾匹配的 }
+    3. 正则匹配最外层 JSON 对象
+    """
+    # 1. markdown 代码块
     if "```json" in content:
-        content = content.split("```json")[1].split("```")[0].strip()
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0].strip()
+        return content.split("```json", 1)[1].split("```", 1)[0].strip()
+    if "```" in content:
+        inner = content.split("```", 2)
+        if len(inner) >= 3:
+            return inner[1].strip()
+
+    # 2. 找到第一个 { 和最后一个 }，截取中间部分
+    first_brace = content.find("{")
+    last_brace = content.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        return content[first_brace:last_brace + 1].strip()
+
+    return content.strip()
+
+
+def _fix_common_json_issues(s: str) -> str:
+    """修复常见的 JSON 格式问题。"""
+    # 去除尾部多余的逗号（如 {"a":1,}）
+    s = re.sub(r",\s*([}\]])", r"\1", s)
+    # 修复字符串值中的未转义换行（analysis 字段常见）
+    # 策略：在引号内将裸换行替换为 \n
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in s:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            continue
+        if ch == "\\":
+            result.append(ch)
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+        if in_string and ch == "\n":
+            result.append("\\n")
+        elif in_string and ch == "\r":
+            pass  # skip \r inside strings
+        elif in_string and ch == "\t":
+            result.append("\\t")
+        elif in_string and ch == '"':
+            # 未转义的引号 — 不应该到这里，但防御性处理
+            result.append('\\"')
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
+def _parse_judge_output(content: str, dimensions: list[str]) -> dict:
+    """解析 Judge 模型输出的 JSON。
+
+    Args:
+        content: Judge 模型的原始输出
+        dimensions: 必需的评分维度列表
+
+    Raises:
+        ValueError: JSON 解析失败或缺少必需字段
+    """
+    extracted = _extract_json_string(content)
+
+    # 先尝试直接解析
     try:
-        return json.loads(content)
+        parsed = json.loads(extracted)
     except json.JSONDecodeError:
-        return {"raw_output": content}
+        # 尝试修复常见问题后再解析
+        fixed = _fix_common_json_issues(extracted)
+        try:
+            parsed = json.loads(fixed)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"无法解析 Judge 输出为 JSON: {e} | 内容: {content[:300]}")
+
+    # 校验必需字段：analysis + 所有评分维度
+    missing = []
+    if "analysis" not in parsed:
+        missing.append("analysis")
+    for dim in dimensions:
+        if dim not in parsed:
+            missing.append(dim)
+    if missing:
+        raise ValueError(f"Judge 输出缺少必需字段: {missing}")
+
+    return parsed
 
 
 def _compute_summary(scores: list[dict], dimensions: list[str]) -> dict:

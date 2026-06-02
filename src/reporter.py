@@ -155,10 +155,10 @@ def generate_html_report(run_name: str, open_browser: bool = True) -> Path:
             "latency_ms": r.get("latency_ms"),
             "ttft_ms": r.get("ttft_ms"),
             "finish_reason": response.get("choices", [{}])[0].get("finish_reason"),
-            "scores": {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "raw_output", "analysis")},
+            "scores": {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis")},
             "analysis": _enrich_analysis(
                 score.get("analysis", ""),
-                {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "raw_output", "analysis")},
+                {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis")},
                 dim_name_map,
                 dim_name_reverse,
             ),
@@ -278,7 +278,7 @@ def export_excel(run_name: str) -> Path:
         for row_idx, score in sorted(scores.items()):
             row = {"row_index": row_idx, "query": score.get("query", "")}
             for k, v in score.items():
-                if k not in ("row_index", "query", "response_summary", "error", "raw_output"):
+                if k not in ("row_index", "query", "response_summary", "error"):
                     row[k] = v
             scores_data.append(row)
         df_scores = pd.DataFrame(scores_data)
