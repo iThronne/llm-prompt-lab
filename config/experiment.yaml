@@ -14,7 +14,7 @@ judge:
     api_key_env: JUDGE_OPENAI_API_KEY
     max_tokens: 4096
   prompt: judge-system-prompt-default.md
-  dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "overall" ]
+  dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall" ]
 
 # ── Profiles ────────────────────────────────────────────────────────
 # 每个 profile 包含完整的 candidate 配置和 prompt。

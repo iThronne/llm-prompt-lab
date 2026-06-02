@@ -67,7 +67,7 @@ class JudgeConfig(BaseModel):
     model: ModelConfig
     prompt: str
     dimensions: list[str] = Field(
-        default_factory=lambda: ["relevance", "factuality", "fluency", "structure", "overall"])
+        default_factory=lambda: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall"])
 
 
 class ExperimentConfig(BaseModel):

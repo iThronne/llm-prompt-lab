@@ -76,7 +76,7 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
                 row_idx = r["row_index"]
                 response_text = _extract_response_text(r["response"])
                 messages = _build_judge_messages(
-                    system_prompt, r["user_content"], response_text,
+                    system_prompt, r["candidate_input"], response_text,
                     language=r.get("language"), location=r.get("location"),
                 )
 
@@ -156,19 +156,36 @@ def _sort_scores(scores_path: Path, existing_scores: dict):
 
 
 def _build_judge_messages(
-    system_prompt: str, user_message: str, response: str,
+    system_prompt: str, candidate_input: list[dict], response: str,
     language: str | None = None, location: str | None = None,
 ) -> list[dict]:
     """构建 judge API 调用的 messages。
 
     Args:
         system_prompt: 完整的评分标准（来自 judge prompt 文件）
-        user_message: 发送给候选模型的完整用户消息（含时间戳等信息）
+        candidate_input: 候选模型的完整输入消息（非 system 消息列表）
         response: 模型回复
         language: 用户语言，用于评测本地化维度
         location: 用户位置，用于评测本地化维度
     """
-    user_content = f"## 待评测内容\n\n**用户消息：**\n{user_message}\n\n**AI 回复：**\n{response}"
+    # 格式化候选模型的输入过程
+    input_parts = []
+    for msg in candidate_input:
+        role = msg.get("role", "unknown")
+        if role == "user":
+            input_parts.append(f"**用户消息：**\n{msg.get('content', '')}")
+        elif role == "assistant" and msg.get("tool_calls"):
+            # 格式化工具调用信息
+            for tc in msg["tool_calls"]:
+                func = tc.get("function", {})
+                args = func.get("arguments", "")
+                input_parts.append(f"**模型工具调用：**\n函数: {func.get('name', '')}\n参数: {args}")
+        elif role == "tool":
+            input_parts.append(f"**搜索结果：**\n{msg.get('content', '')}")
+
+    input_text = "\n\n".join(input_parts) if input_parts else "（无输入记录）"
+
+    user_content = f"## 候选模型输入\n\n{input_text}\n\n## 候选模型输出\n\n{response}"
 
     # 在待评测内容前添加用户上下文（语言、位置）
     context_parts = []
