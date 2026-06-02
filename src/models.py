@@ -30,12 +30,16 @@ def create_client(model_config: ModelConfig) -> AsyncOpenAI:
         proxy_url = os.getenv("PROXY_URL", "")
         if not proxy_url:
             raise ValueError("use_proxy=True but PROXY_URL is not set in environment")
-        ssl_context = httpx.create_ssl_context(verify=False)  # 禁用 SSL 验证
         http_client = httpx.AsyncClient(
             proxy=proxy_url,
-            verify=ssl_context,  # 强行把“禁用 SLL 验证”的上下文塞给客户端
+            verify=httpx.create_ssl_context(verify=False),  # 强行把“禁用 SLL 验证”的上下文塞给客户端
         )
-        kwargs["http_client"] = http_client
+    else:
+        http_client = httpx.AsyncClient(
+            proxy=None,
+            transport=httpx.AsyncHTTPTransport(),  # [关键] 创建一个新的 AsyncHTTPTransport
+        )
+    kwargs["http_client"] = http_client
 
     return AsyncOpenAI(**kwargs)
 
