@@ -89,6 +89,7 @@ class Config:
     def __init__(self, config_dir: Optional[Path] = None, profile: Optional[str] = None):
         base = config_dir or CONFIG_DIR
         self.prompts = self._load_prompts(base / "prompts")
+        self.domain_prompts = self._load_domain_prompts(base / "prompts" / "judge-domains")
         self.profile_name: str = ""
         self.available_profiles: list[str] = []
         self.experiment = self._load_experiment(base / "experiment.yaml", profile)
@@ -106,6 +107,20 @@ class Config:
             for prompt_file in sorted(path.glob(f"*{ext}")):
                 prompts[prompt_file.name] = PromptConfig(content=prompt_file.read_text(encoding="utf-8"))
         return prompts
+
+    def _load_domain_prompts(self, path: Path) -> dict[str, str]:
+        """扫描 config/prompts/judge-domains/ 目录，加载垂域评测标准。
+
+        key 为文件名去掉扩展名（如 coding.md → coding），
+        value 为文件内容。数据集的 domain 字段值需与 key 匹配。
+        """
+        if not path.exists():
+            return {}
+        domain_prompts: dict[str, str] = {}
+        for ext in self.PROMPT_EXTENSIONS:
+            for f in sorted(path.glob(f"*{ext}")):
+                domain_prompts[f.stem] = f.read_text(encoding="utf-8")
+        return domain_prompts
 
     def _load_experiment(self, path: Path, profile: Optional[str]) -> ExperimentConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))

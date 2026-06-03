@@ -14,8 +14,8 @@ import pandas as pd
 
 # 数据集必需列
 REQUIRED_COLUMNS = ["query", "api_json"]
-# 数据集可选列（用于 locale 上下文注入）
-OPTIONAL_COLUMNS = ["language", "location"]
+# 数据集可选列（用于 locale / 垂域 上下文注入）
+OPTIONAL_COLUMNS = ["language", "location", "domain"]
 
 
 def copy_dataset(src_path: str, dest_path: Path, columns: list[str]) -> Path:
@@ -50,7 +50,7 @@ def load_dataset(excel_path: str) -> list[dict]:
     """从 Excel 加载数据集，返回 list[dict]。
 
     必选列：query, api_json
-    可选列：language, location（用于 locale 上下文注入）
+    可选列：language, location（用于 locale 上下文注入）, domain（用于垂域评分）
     """
     df = pd.read_excel(excel_path)
     for col in REQUIRED_COLUMNS:
@@ -61,7 +61,7 @@ def load_dataset(excel_path: str) -> list[dict]:
     records = df[cols].to_dict("records")
     # 填充空值（NaN → None）
     for r in records:
-        for key in ("language", "location"):
+        for key in ("language", "location", "domain"):
             if key not in r or pd.isna(r.get(key)):
                 r[key] = None
     return records

@@ -448,7 +448,7 @@
                     if (minInput && minInput.value !== '') {
                         const minVal = parseInt(minInput.value);
                         const score = r.scores[dim];
-                        if (score === undefined || score < minVal) return false;
+                        if (score === null || score === undefined || score < minVal) return false;
                     }
                 }
                 {% endif %}
@@ -558,7 +558,11 @@
                 if (HAS_SCORES) {
                     DIMENSIONS.forEach(dim => {
                         const score = row.scores[dim];
-                        html += `<td>${score !== undefined ? `<span class="score-badge">${score}</span>` : '-'}</td>`;
+                        if (score === null || score === undefined) {
+                            html += `<td><span class="score-badge" style="opacity:0.4">N/A</span></td>`;
+                        } else {
+                            html += `<td><span class="score-badge">${score}</span></td>`;
+                        }
                     });
                 }
 

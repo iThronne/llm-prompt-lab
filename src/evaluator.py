@@ -37,6 +37,9 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
     judge_data = meta["judge"]
     judge_model_cfg = ModelConfig(**judge_data["model"])
     client = create_client(judge_model_cfg)
+    domain_prompts = meta.get("domain_prompts", {})
+    if domain_prompts:
+        print(f"[info] domain prompts loaded: {list(domain_prompts.keys())}")
 
     responses_path = RESULTS_DIR / run_name / "responses.jsonl"
     if not responses_path.exists():
@@ -81,9 +84,16 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
                 all_messages = rendered_request.get("messages", [])
                 candidate_input = [m for m in all_messages if m.get("role") != "system"]
 
+                # 查找垂域评测标准（如有）
+                row_domain = r.get("domain")
+                domain_prompt = domain_prompts.get(row_domain) if row_domain else None
+                if row_domain and not domain_prompt and domain_prompts:
+                    tqdm.write(f"[warn] row {row_idx}: no domain prompt for '{row_domain}', using base prompt only")
+
                 messages = _build_judge_messages(
                     system_prompt, candidate_input, response_text,
                     language=r.get("language"), location=r.get("location"),
+                    domain=row_domain, domain_prompt=domain_prompt,
                 )
 
                 score_entry = None
@@ -164,6 +174,7 @@ def _sort_scores(scores_path: Path, existing_scores: dict):
 def _build_judge_messages(
     system_prompt: str, candidate_input: list[dict], response: str,
     language: str | None = None, location: str | None = None,
+    domain: str | None = None, domain_prompt: str | None = None,
 ) -> list[dict]:
     """构建 judge API 调用的 messages。
 
@@ -173,7 +184,14 @@ def _build_judge_messages(
         response: 模型回复
         language: 用户语言，用于评测本地化维度
         location: 用户位置，用于评测本地化维度
+        domain: 垂域分类（如 content_creation），标注在用户上下文中
+        domain_prompt: 垂域评测标准（来自 judge-domains/ 目录），追加到 system prompt
     """
+    # 如有垂域评测标准，追加到 system prompt 末尾
+    effective_system_prompt = system_prompt
+    if domain_prompt:
+        effective_system_prompt = system_prompt + "\n\n" + domain_prompt
+
     # 格式化候选模型的输入过程
     input_parts = []
     for msg in candidate_input:
@@ -193,17 +211,19 @@ def _build_judge_messages(
 
     user_content = f"## 候选模型输入\n\n{input_text}\n\n## 候选模型输出\n\n{response}"
 
-    # 在待评测内容前添加用户上下文（语言、位置）
+    # 在待评测内容前添加用户上下文（语言、位置、垂域）
     context_parts = []
     if language:
         context_parts.append(f"语言：{language}")
     if location:
         context_parts.append(f"位置：{location}")
+    if domain:
+        context_parts.append(f"垂域分类：{domain}")
     if context_parts:
         user_content = "**用户上下文：**\n" + "\n".join(context_parts) + "\n\n" + user_content
 
     return [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": effective_system_prompt},
         {"role": "user", "content": user_content},
     ]
 

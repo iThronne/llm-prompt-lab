@@ -20,6 +20,7 @@ def import_excel(
         query_col: str = "query",
         response_col: str = "response",
         api_json_col: str = "api_json",
+        domain_col: str = "domain",
         profile_name: str = "",
 ):
     """从 Excel 导入数据，生成可供 eval 使用的 run 目录。
@@ -31,6 +32,7 @@ def import_excel(
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
         api_json_col: api_json 列名，默认 "api_json"
+        domain_col: 垂域分类列名，默认 "domain"（可选，不存在则忽略）
         profile_name: 使用的 profile 名称
     """
     exp = config.get_experiment()
@@ -49,7 +51,10 @@ def import_excel(
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 保存数据集到 run 目录（仅保留用到的列，保证可追溯）
-    saved_dataset_path = copy_dataset(excel_path, result_dir, [query_col, response_col, api_json_col])
+    cols_to_keep = [query_col, response_col, api_json_col]
+    if domain_col in df.columns:
+        cols_to_keep.append(domain_col)
+    saved_dataset_path = copy_dataset(excel_path, result_dir, cols_to_keep)
 
     # 写入 responses.jsonl
     responses_path = result_dir / "responses.jsonl"
@@ -87,11 +92,15 @@ def import_excel(
                 "query": query_text,
                 "language": row.get("language") if "language" in df.columns else None,
                 "location": row.get("location") if "location" in df.columns else None,
+                "domain": row.get(domain_col) if domain_col in df.columns else None,
                 "rendered_request": rendered_request,
                 "response": {
                     "choices": [{"message": {"content": response_text}}]
                 },
             }
+            # NaN → None
+            if record["domain"] is not None and pd.isna(record["domain"]):
+                record["domain"] = None
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     if error_count > 0:
@@ -108,6 +117,7 @@ def import_excel(
         "dataset": str(saved_dataset_path),
         "dataset_content_hash": Config.hash_file(saved_dataset_path),
         "judge": exp.judge.model_dump() if exp.judge else None,
+        "domain_prompts": config.domain_prompts,
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -24,7 +24,12 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
 
 
-def save_run_meta(run_name: str, experiment: ExperimentConfig, profile_name: str = ""):
+def save_run_meta(
+    run_name: str,
+    experiment: ExperimentConfig,
+    profile_name: str = "",
+    domain_prompts: dict[str, str] | None = None,
+):
     """Save run metadata (full experiment config snapshot) for reproducibility."""
     result_dir = RESULTS_DIR / run_name
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -43,6 +48,7 @@ def save_run_meta(run_name: str, experiment: ExperimentConfig, profile_name: str
         "dataset": str(saved_dataset),
         "dataset_content_hash": Config.hash_file(saved_dataset),
         "judge": experiment.judge.model_dump() if experiment.judge else None,
+        "domain_prompts": domain_prompts or {},
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(
@@ -108,7 +114,7 @@ async def run_experiment(config: Config, run_name: str):
     exp = config.get_experiment()
     model_cfg = exp.candidate
 
-    save_run_meta(run_name, exp, profile_name=config.profile_name)
+    save_run_meta(run_name, exp, profile_name=config.profile_name, domain_prompts=config.domain_prompts)
 
     client = create_client(model_cfg)
     rows = load_dataset(exp.dataset)
@@ -151,6 +157,7 @@ async def run_experiment(config: Config, run_name: str):
                 "query": row["query"],
                 "language": row.get("language"),
                 "location": row.get("location"),
+                "domain": row.get("domain"),
                 "rendered_request": {"error": f"api_json parse error: {e}"},
                 "response": {"choices": [{"message": {"content": ""}}]},
                 "latency_ms": 0,
@@ -191,6 +198,7 @@ async def run_experiment(config: Config, run_name: str):
             "query": row["query"],
             "language": row.get("language"),
             "location": row.get("location"),
+            "domain": row.get("domain"),
             "rendered_request": actual_request,
             "response": response,
             "latency_ms": round(latency_ms, 1),

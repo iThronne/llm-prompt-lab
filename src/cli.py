@@ -66,6 +66,7 @@ def main():
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
     import_p.add_argument("--api-json-col", default="api_json", help="api_json 列名（默认 api_json）")
+    import_p.add_argument("--domain-col", default="domain", help="垂域分类列名（默认 domain，可选）")
 
     list_p = sub.add_parser("list", help="列出实验定义与已有 run")
     list_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile")
@@ -116,6 +117,7 @@ def main():
             query_col=args.query_col,
             response_col=args.response_col,
             api_json_col=args.api_json_col,
+            domain_col=args.domain_col,
             profile_name=config.profile_name,
         )
     elif args.command == "list":

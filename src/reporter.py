@@ -81,11 +81,14 @@ def _enrich_analysis(analysis: str, scores: dict, dim_name_map: dict, dim_name_r
         chinese_name = match.group(1)
         english_name = reverse_map.get(chinese_name)
         if english_name and english_name in scores:
-            return f"{chinese_name}（{scores[english_name]}分）："
+            score = scores[english_name]
+            if score is None:
+                return f"{chinese_name}（N/A）："
+            return f"{chinese_name}（{score}分）："
         return match.group(0)
 
-    # 匹配模式：维度中文名 + 可选的（N分）+ 冒号
-    pattern = r"(相关性|事实性|流畅性|结构化|实时性|本地化|搜索质量|综合)(?:（\d+分）)?："
+    # 匹配模式：维度中文名 + 可选的（N分）或（N/A）+ 冒号
+    pattern = r"(相关性|事实性|流畅性|结构化|实时性|本地化|搜索质量|综合)(?:（\d+分|N/A）)?："
     return re.sub(pattern, replace_dim, analysis)
 
 
