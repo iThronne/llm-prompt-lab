@@ -207,5 +207,7 @@ class Config:
         parts = []
         if profile_name:
             parts.append(profile_name)
-        parts.extend([model_config.provider, model_config.model, prompt_name, dataset_stem, h])
+        # model 名可能含 /（如 meta/llama-3），替换为 _ 避免目录路径问题
+        safe_model = model_config.model.replace("/", "_")
+        parts.extend([model_config.provider, safe_model, prompt_name, dataset_stem, h])
         return "@".join(parts)
