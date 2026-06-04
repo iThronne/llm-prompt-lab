@@ -241,7 +241,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     )
 
     # 写入文件
-    report_path = result_dir / "report.html"
+    report_path = result_dir / f"{run_name}_report.html"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -318,7 +318,7 @@ def export_excel(run_name: str) -> Path:
         df_scores = pd.DataFrame(scores_data)
 
     # 写入 Excel
-    export_path = result_dir / "report.xlsx"
+    export_path = result_dir / f"{run_name}_report.xlsx"
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
         df_summary.to_excel(writer, sheet_name="Summary", index=False)
         df_responses.to_excel(writer, sheet_name="Responses", index=False)
