@@ -15,6 +15,10 @@ import asyncio
 import json
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.config import Config
 from src.constants import RESULTS_DIR, META_FILE
 from src.evaluator import run_evaluation
