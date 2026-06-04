@@ -128,6 +128,21 @@ def _extract_search_results(rendered_request: dict | None) -> str:
     return "\n\n".join(parts)
 
 
+def _short_report_name(run_name: str) -> str:
+    """从 run_name 提取短标识用于文件命名。
+
+    标准格式 {profile}@{provider}@{model}@{prompt}@{dataset}@{hash}
+    提取为 {profile}-{model}-{hash}，如 default-deepseek-v4-flash-184e7c18。
+    非标准格式（自定义名称）直接返回原名。
+    """
+    parts = run_name.split("@")
+    if len(parts) == 6:
+        profile, _provider, model = parts[0], parts[1], parts[2]
+        hash_suffix = parts[-1]
+        return f"{profile}-{model}-{hash_suffix}"
+    return run_name
+
+
 def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     """生成 HTML 报告。
 
@@ -241,7 +256,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     )
 
     # 写入文件
-    report_path = result_dir / f"{run_name}_report.html"
+    report_path = result_dir / f"{_short_report_name(run_name)}_report.html"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -318,7 +333,7 @@ def export_excel(run_name: str) -> Path:
         df_scores = pd.DataFrame(scores_data)
 
     # 写入 Excel
-    export_path = result_dir / f"{run_name}_report.xlsx"
+    export_path = result_dir / f"{_short_report_name(run_name)}_report.xlsx"
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
         df_summary.to_excel(writer, sheet_name="Summary", index=False)
         df_responses.to_excel(writer, sheet_name="Responses", index=False)
