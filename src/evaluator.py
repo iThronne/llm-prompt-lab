@@ -124,7 +124,7 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
                             await asyncio.sleep(delay)
                         else:
                             tqdm.write(f"[error] judge failed for row {row_idx}: {e}")
-                            score_entry = {"row_index": row_idx, "error": str(e)}
+                            score_entry = None
 
                 if score_entry is not None:
                     async with write_lock:
@@ -141,6 +141,7 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
     summary = _compute_summary(all_scores, judge_data["dimensions"])
+    failed_count = len(results) - len(all_scores)
 
     output = {
         "experiment": run_name,
@@ -148,9 +149,12 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
         "dimensions": judge_data["dimensions"],
         "summary": summary,
         "total_scored": len(all_scores),
+        "failed_count": failed_count,
     }
     summary_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[done] evaluation saved → {summary_path}")
+    if failed_count > 0:
+        print(f"  {failed_count} item(s) failed, run eval again to retry")
     print(f"  Summary: {json.dumps(summary, ensure_ascii=False)}")
 
 
