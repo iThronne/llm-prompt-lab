@@ -87,8 +87,9 @@ def _enrich_analysis(analysis: str, scores: dict, dim_name_map: dict, dim_name_r
             return f"{chinese_name}（{score}分）："
         return match.group(0)
 
-    # 匹配模式：维度中文名 + 可选的（N分）或（N/A）+ 冒号
-    pattern = r"(相关性|事实性|流畅性|结构化|实时性|本地化|搜索质量|综合)(?:（\d+分|N/A）)?："
+    # 从 dim_name_map 动态构建匹配模式：维度中文名 + 可选的（N分）或（N/A）+ 冒号
+    chinese_names = "|".join(dim_name_map.values())
+    pattern = rf"({chinese_names})(?:（\d+分|N/A）)?："
     return re.sub(pattern, replace_dim, analysis)
 
 
