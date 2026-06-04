@@ -33,8 +33,8 @@ llm-prompt-lab/
 ├── config/
 │   ├── experiment.yaml                    # 实验配置（profiles + judge + dataset）
 │   └── prompts/                           # Prompt 模板文件
-│       ├── candidate-system-prompt-default.md   # 被测模型 system prompt
-│       └── judge-system-prompt-default.md        # Judge 评分标准
+│       ├── candidate-prompt.md   # 被测模型 system prompt
+│       └── judge-prompt.md        # Judge 评分标准
 ├── data/                                  # 数据集（Excel）
 ├── src/
 │   ├── cli.py                             # CLI 入口
@@ -74,7 +74,7 @@ judge:
     model: qwen3.7-max
     base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: JUDGE_OPENAI_API_KEY
-  prompt: judge-system-prompt-default.md
+  prompt: judge-prompt.md
   dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "overall"]
 
 # ── Profiles ─────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ profiles:
       api_key_env: CANDIDATE_OPENAI_API_KEY
       temperature: 0.7
       max_tokens: 1024
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   think:
     candidate:
@@ -100,7 +100,7 @@ profiles:
       extra_body:                        # 非标准 API 参数
         chat_template_kwargs:
           enable_thinking: true
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   default-stream:
     candidate:
@@ -111,7 +111,7 @@ profiles:
       temperature: 0.7
       max_tokens: 1024
       stream: true                       # 启用流式调用
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   default-proxy:
     candidate:
@@ -122,7 +122,7 @@ profiles:
       temperature: 0.7
       max_tokens: 1024
       use_proxy: true                    # 使用代理（从环境变量 PROXY_URL 读取）
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 ```
 
 #### 核心概念
@@ -190,11 +190,11 @@ candidate:
   api_key_env: CANDIDATE_OPENAI_API_KEY
   temperature: 0.7
   max_tokens: 1024
-prompt: candidate-system-prompt-default.md
+prompt: candidate-prompt.md
 dataset: data/example.xlsx
 judge:
   model: ...
-  prompt: judge-system-prompt-default.md
+  prompt: judge-prompt.md
 ```
 
 ### Prompt 模板 (`config/prompts/`)
@@ -328,7 +328,7 @@ python -m src.cli eval prod-eval
 | localization（本地化） | 回复是否适配了用户的语言和位置偏好 |
 | overall（综合评分） | 整体质量评价 |
 
-评分标准详见 `config/prompts/judge-system-prompt-default.md`。
+评分标准详见 `config/prompts/judge-prompt.md`。
 
 #### 实时性评测
 
@@ -376,10 +376,10 @@ python -m src.cli eval prod-eval
 
 ## Run 名称生成
 
-Run 名称由配置自动生成，格式为 `{profile}@{provider}@{model}@{prompt}@{dataset_stem}@{hash}`，使用 `@` 分隔各部分。例如：
+Run 名称由配置自动生成，格式为 `{dataset_stem}@{provider}@{model}@[{profile}@]{prompt}@{hash}`，使用 `@` 分隔各部分。稳定的部分在前（数据集 > 服务商 > 模型 > profile > prompt），方便目录浏览时同类实验自然聚集。例如：
 
 ```
-default@ali@deepseek-v4-flash@candidate-system-prompt-default.md@example@0c3361be
+example@ali@deepseek-v4-flash@default@candidate-prompt.md@0c3361be
 ```
 
 相同配置产生相同名称，因此相同命令天然支持断点续跑。

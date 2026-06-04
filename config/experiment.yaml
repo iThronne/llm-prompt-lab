@@ -13,7 +13,7 @@ judge:
     base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: JUDGE_OPENAI_API_KEY
     max_tokens: 4096
-  prompt: judge-system-prompt-default.md
+  prompt: judge-prompt.md
   dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall" ]
 
 # ── Profiles ────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ profiles:
       api_key_env: CANDIDATE_OPENAI_API_KEY
       temperature: 0.7
       max_tokens: 1024
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   think:
     candidate:
@@ -42,7 +42,7 @@ profiles:
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   # 流式调用示例：逐 token 接收，适合长文本生成场景。
   # 额外记录 ttft_ms（首 token 延迟），避免长生成超时。
@@ -55,7 +55,7 @@ profiles:
       temperature: 0.7
       max_tokens: 1024
       stream: true
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md
 
   # 代理调用示例：通过 PROXY_URL 访问 OpenAI 官方 API。
   # use_proxy=true 时自动禁用 SSL 验证，代理地址从 .env 的 PROXY_URL 读取。
@@ -68,4 +68,4 @@ profiles:
       temperature: 0.7
       max_tokens: 1024
       use_proxy: true
-    prompt: candidate-system-prompt-default.md
+    prompt: candidate-prompt.md

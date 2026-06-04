@@ -188,8 +188,10 @@ class Config:
             dataset: str, dataset_content_hash: str,
             profile_name: str = "",
     ) -> str:
-        """Generate a deterministic run name: [{profile}-]{provider}-{model}-{prompt}-{dataset_stem}-{hash}
+        """Generate a deterministic run name: {dataset_stem}@{provider}@{model}@[{profile}@]{prompt}@{hash}
 
+        稳定的部分在前（dataset > provider > model > profile > prompt），
+        方便目录浏览时同一数据集和模型的实验自然聚集。
         hash covers provider + model call params + prompt content + dataset file content,
         so any substantive change produces a different run name.
         The same config always produces the same run name, enabling resume/checkpoint.
@@ -204,10 +206,10 @@ class Config:
         h = hashlib.md5(canonical.encode()).hexdigest()[:8]
         dataset_stem = Path(dataset).stem
 
-        parts = []
-        if profile_name:
-            parts.append(profile_name)
         # model 名可能含 /（如 meta/llama-3），替换为 _ 避免目录路径问题
         safe_model = model_config.model.replace("/", "_")
-        parts.extend([model_config.provider, safe_model, prompt_name, dataset_stem, h])
+        parts = [dataset_stem, model_config.provider, safe_model]
+        if profile_name:
+            parts.append(profile_name)
+        parts.extend([prompt_name, h])
         return "@".join(parts)
