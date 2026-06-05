@@ -19,8 +19,11 @@ python -m src.cli run
 # 运行指定 profile 的实验
 python -m src.cli run --profile think
 
-# 评测结果（自动生成 HTML 报告和 Excel 导出）
+# 评测结果（从 eval.yaml 读取评测配置，自动生成 HTML 报告和 Excel 导出）
 python -m src.cli eval
+
+# 评测配置变更后强制重新评测
+python -m src.cli eval --force
 
 # 查看摘要
 python -m src.cli show
@@ -31,10 +34,11 @@ python -m src.cli show
 ```
 llm-prompt-lab/
 ├── config/
-│   ├── experiment.yaml                    # 实验配置（profiles + judge + dataset）
+│   ├── experiment.yaml                    # 实验配置（profiles + dataset）
+│   ├── eval.yaml                          # 评测配置（judge 模型 + prompt + dimensions）
 │   └── prompts/                           # Prompt 模板文件
-│       ├── candidate-prompt.md   # 被测模型 system prompt
-│       └── judge-prompt.md        # Judge 评分标准
+│       ├── candidate-prompt.md            # 被测模型 system prompt
+│       └── judge-prompt.md                # Judge 评分标准
 ├── data/                                  # 数据集（Excel）
 ├── src/
 │   ├── cli.py                             # CLI 入口
@@ -50,7 +54,8 @@ llm-prompt-lab/
 │       └── report.html                    # 报告模板（Chart.js 图表 + 交互表格）
 └── results/
     └── {run_name}/                        # 每次实验的输出
-        ├── meta.json                      # 配置快照（含 profile、模型参数、prompt 全文）
+        ├── meta.json                      # 实验配置快照（candidate、prompt、dataset）
+        ├── eval_meta.json                 # 评测配置快照（judge 模型、prompt、dimensions）
         ├── responses.jsonl                # 模型逐条响应
         ├── scores.jsonl                   # Judge 逐条评分
         ├── summary.json                   # 评测汇总统计
@@ -62,20 +67,11 @@ llm-prompt-lab/
 
 ### 实验配置 (`config/experiment.yaml`)
 
-采用多 Profile 模式：`dataset` 和 `judge` 为所有 Profile 共享，`profiles` 节定义多个完整的被测模型配置。
+采用多 Profile 模式：`dataset` 为所有 Profile 共享，`profiles` 节定义多个完整的被测模型配置。
 
 ```yaml
 # ── 共享配置 ──────────────────────────────────────────────────────
 dataset: data/example.xlsx
-
-judge:
-  model:
-    provider: ali
-    model: qwen3.7-max
-    base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-    api_key_env: JUDGE_OPENAI_API_KEY
-  prompt: judge-prompt.md
-  dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "overall"]
 
 # ── Profiles ─────────────────────────────────────────────────────
 profiles:
@@ -125,15 +121,31 @@ profiles:
     prompt: candidate-prompt.md
 ```
 
-#### 核心概念
+### 评测配置 (`config/eval.yaml`)
+
+评测配置独立于实验配置，`eval` 命令运行时实时加载，可随时修改后重新评测。
+
+```yaml
+# 评测配置 — LLM-as-Judge
+model:
+  provider: ali
+  model: qwen3.7-max
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  api_key_env: JUDGE_OPENAI_API_KEY
+  max_tokens: 4096
+prompt: judge-prompt.md
+dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall"]
+```
+
+### 核心概念
 
 | 概念 | 说明 |
 |------|------|
-| **candidate** | 被测模型 -- 正在实验的模型及其参数 |
-| **judge** | 评测模型 -- 用于对 candidate 的输出打分（LLM-as-Judge） |
+| **candidate** | 被测模型 -- 正在实验的模型及其参数，配置在 `experiment.yaml` |
+| **judge** | 评测模型 -- 用于对 candidate 的输出打分，配置在 `eval.yaml` |
 | **profile** | 一组完整的 candidate 配置 + prompt，通过 `--profile` 切换 |
 
-`candidate` 和 `judge` 各自独立配置 `api_key_env`，可以使用不同供应商的 API Key。
+`candidate` 和 `judge` 各自独立配置 `api_key_env`，可以使用不同供应商的 API Key。两者配置文件完全独立，互不影响。
 
 #### 非标准 API 参数
 
@@ -192,9 +204,6 @@ candidate:
   max_tokens: 1024
 prompt: candidate-prompt.md
 dataset: data/example.xlsx
-judge:
-  model: ...
-  prompt: judge-prompt.md
 ```
 
 ### Prompt 模板 (`config/prompts/`)
@@ -250,10 +259,11 @@ python -m src.cli run                        # 使用 default profile
 python -m src.cli run --profile think        # 使用 think profile
 python -m src.cli run --name my-exp          # 自定义 run 名称
 
-# 评测实验结果（LLM-as-Judge，从 meta.json 读取配置，不依赖当前 experiment.yaml）
+# 评测实验结果（LLM-as-Judge，从 eval.yaml 实时加载评测配置）
 # 省略 run_name 时自动评测最新实验，完成后自动生成 HTML 报告和 Excel 导出
 python -m src.cli eval
 python -m src.cli eval <run_name>
+python -m src.cli eval --force               # 评测配置变更后强制重新评测
 
 # 生成 HTML 可视化报告（省略 run_name 时使用最新实验）
 python -m src.cli report
@@ -277,13 +287,13 @@ python -m src.cli show <run_name>
 |------|------|
 | `list` | 列出 profiles 和已有 run |
 | `run` | 运行实验（支持断点续跑） |
-| `eval` | LLM-as-Judge 评测（自动生成报告和导出） |
+| `eval` | LLM-as-Judge 评测（从 eval.yaml 读取配置，支持 `--force`） |
 | `report` | 生成 HTML 可视化报告 |
 | `export` | 导出 Excel 文件 |
 | `import` | 从 Excel 导入现网数据 |
 | `show` | 查看结果摘要 |
 
-`run` 和 `list` 支持 `--profile` / `-p` 参数选择 profile。`eval`、`report`、`export` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
+`run` 和 `list` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
 
 ### 导入现网数据
 
@@ -316,7 +326,7 @@ python -m src.cli eval prod-eval
 
 ### 评分维度
 
-默认评测七个维度（每个维度 1-5 分），可在 `experiment.yaml` 的 `dimensions` 中自定义：
+默认评测八个维度（每个维度 1-5 分），可在 `eval.yaml` 的 `dimensions` 中自定义：
 
 | 维度 | 说明 |
 |------|------|
@@ -326,6 +336,7 @@ python -m src.cli eval prod-eval
 | structure（结构化） | 回复组织是否清晰合理 |
 | timeliness（实时性） | 回复是否考虑了时间敏感性（新闻、金价、天气等） |
 | localization（本地化） | 回复是否适配了用户的语言和位置偏好 |
+| search_quality（搜索质量） | 联网搜索的关键词选择、结果筛选及利用质量 |
 | overall（综合评分） | 整体质量评价 |
 
 评分标准详见 `config/prompts/judge-prompt.md`。
@@ -346,9 +357,23 @@ python -m src.cli eval prod-eval
 - 评测本身也支持断点续评，已评分条目不会重复调用 Judge 模型
 - 失败时采用指数退避重试
 
-### 评测独立性
+### 评测配置与断点续评
 
-评测配置（Judge 模型、评分 prompt、评分维度）在实验运行时冻结到 `meta.json`。执行 `eval` 时从快照读取，不依赖当前 `experiment.yaml` 的内容 -- 即使修改了配置或重命名了 prompt 文件，之前的实验仍可正常评测。
+评测配置（Judge 模型、评分 prompt、评分维度）从 `eval.yaml` 实时加载，不依赖 `experiment.yaml` 或 `meta.json` 中的快照。这意味着修改评测配置后可以直接重新评测同一个 run，无需手动修改结果目录。
+
+`eval` 命令通过 `eval_meta.json` 记录当次评测的配置 hash，实现智能断点续评：
+
+- **配置未变（hash 相同）**：自动从断点继续，已评分条目不会重复调用 Judge 模型
+- **配置变更（hash 不同）**：提示用户手动删除旧结果后重试，或使用 `--force` 强制覆盖
+- **无历史记录**：正常开始全新评测
+
+```bash
+# 配置变更后强制重新评测
+python -m src.cli eval --force
+
+# 输出示例：
+[force] 评测配置已变更 (hash: a1b2c3d4 → e5f6g7h8)，清空旧结果
+```
 
 ## 可视化报告
 
