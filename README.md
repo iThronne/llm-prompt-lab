@@ -250,10 +250,6 @@ Excel 文件需包含以下两列：
 ## CLI 命令
 
 ```bash
-# 列出可用 profiles 和已有实验 run
-python -m src.cli list
-python -m src.cli list --profile think       # 预览指定 profile 的配置
-
 # 运行实验（自动断点续跑）
 python -m src.cli run                        # 使用 default profile
 python -m src.cli run --profile think        # 使用 think profile
@@ -285,7 +281,6 @@ python -m src.cli show <run_name>
 
 | 命令 | 说明 |
 |------|------|
-| `list` | 列出 profiles 和已有 run |
 | `run` | 运行实验（支持断点续跑） |
 | `eval` | LLM-as-Judge 评测（从 eval.yaml 读取配置，支持 `--force`） |
 | `report` | 生成 HTML 可视化报告 |
@@ -293,7 +288,7 @@ python -m src.cli show <run_name>
 | `import` | 从 Excel 导入现网数据 |
 | `show` | 查看结果摘要 |
 
-`run` 和 `list` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
+`run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
 
 ### 导入现网数据
 

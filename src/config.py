@@ -77,49 +77,51 @@ class ExperimentConfig(BaseModel):
     dataset: str
 
 
-class Config:
-    """聚合加载所有配置文件，提供便捷的查找方法。
+PROMPT_EXTENSIONS = {".md", ".txt"}
 
-    支持两种 experiment.yaml 格式：
+
+def _load_prompts(path: Path) -> dict[str, PromptConfig]:
+    """扫描 config/prompts/ 目录，读取 prompt 文件。
+
+    支持 .md / .txt 等扩展名。key 为完整文件名（如 test.md），
+    YAML 中必须写带扩展名的文件名来引用，否则报错。
+    """
+    prompts: dict[str, PromptConfig] = {}
+    for ext in PROMPT_EXTENSIONS:
+        for prompt_file in sorted(path.glob(f"*{ext}")):
+            prompts[prompt_file.name] = PromptConfig(content=prompt_file.read_text(encoding="utf-8"))
+    return prompts
+
+
+def _load_domain_prompts(path: Path) -> dict[str, str]:
+    """扫描 config/prompts/judge-domains/ 目录，加载垂域评测标准。
+
+    key 为文件名去掉扩展名（如 coding.md → coding），
+    value 为文件内容。数据集的 domain 字段值需与 key 匹配。
+    """
+    if not path.exists():
+        return {}
+    domain_prompts: dict[str, str] = {}
+    for ext in PROMPT_EXTENSIONS:
+        for f in sorted(path.glob(f"*{ext}")):
+            domain_prompts[f.stem] = f.read_text(encoding="utf-8")
+    return domain_prompts
+
+
+class ExperimentConfigLoader:
+    """加载实验配置（experiment.yaml + prompts）。
+
+    run 命令使用。支持两种 experiment.yaml 格式：
       - 单配置模式：整个文件为一组实验配置（简单场景）。
       - 多 profile 模式：profiles 节定义多个完整配置，dataset 共享。
     """
 
     def __init__(self, config_dir: Optional[Path] = None, profile: Optional[str] = None):
         base = config_dir or CONFIG_DIR
-        self.prompts = self._load_prompts(base / "prompts")
-        self.domain_prompts = self._load_domain_prompts(base / "prompts" / "judge-domains")
+        self.prompts = _load_prompts(base / "prompts")
         self.profile_name: str = ""
         self.available_profiles: list[str] = []
         self.experiment = self._load_experiment(base / "experiment.yaml", profile)
-
-    PROMPT_EXTENSIONS = {".md", ".txt"}
-
-    def _load_prompts(self, path: Path) -> dict[str, PromptConfig]:
-        """扫描 config/prompts/ 目录，读取 prompt 文件。
-
-        支持 .md / .txt 等扩展名。key 为完整文件名（如 test.md），
-        YAML 中必须写带扩展名的文件名来引用，否则报错。
-        """
-        prompts: dict[str, PromptConfig] = {}
-        for ext in self.PROMPT_EXTENSIONS:
-            for prompt_file in sorted(path.glob(f"*{ext}")):
-                prompts[prompt_file.name] = PromptConfig(content=prompt_file.read_text(encoding="utf-8"))
-        return prompts
-
-    def _load_domain_prompts(self, path: Path) -> dict[str, str]:
-        """扫描 config/prompts/judge-domains/ 目录，加载垂域评测标准。
-
-        key 为文件名去掉扩展名（如 coding.md → coding），
-        value 为文件内容。数据集的 domain 字段值需与 key 匹配。
-        """
-        if not path.exists():
-            return {}
-        domain_prompts: dict[str, str] = {}
-        for ext in self.PROMPT_EXTENSIONS:
-            for f in sorted(path.glob(f"*{ext}")):
-                domain_prompts[f.stem] = f.read_text(encoding="utf-8")
-        return domain_prompts
 
     def _load_experiment(self, path: Path, profile: Optional[str]) -> ExperimentConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -165,31 +167,6 @@ class Config:
     def get_experiment(self) -> ExperimentConfig:
         return self.experiment
 
-    def get_eval(self) -> EvalConfig:
-        """加载评测配置（eval.yaml）。
-
-        从 config/eval.yaml 读取 judge 模型配置，并解析 prompt 文件。
-        如果 eval.yaml 不存在则抛出 FileNotFoundError。
-        """
-        eval_path = CONFIG_DIR / "eval.yaml"
-        if not eval_path.exists():
-            raise FileNotFoundError(
-                f"评测配置文件不存在: {eval_path}\n"
-                f"请创建 config/eval.yaml 来配置评测模型。"
-            )
-
-        data = yaml.safe_load(eval_path.read_text(encoding="utf-8"))
-        eval_cfg = EvalConfig(**data)
-
-        # 解析 prompt 文件名 → 内容
-        if eval_cfg.prompt not in self.prompts:
-            raise ValueError(
-                f"Judge prompt '{eval_cfg.prompt}' not found in config/prompts/. "
-                f"Available: {list(self.prompts.keys())}"
-            )
-        eval_cfg.prompt = self.prompts[eval_cfg.prompt].content
-        return eval_cfg
-
     @staticmethod
     def hash_file(path: Path) -> str:
         """计算文件内容的 MD5 hash，用于检测数据集等文件是否发生变化。"""
@@ -230,3 +207,39 @@ class Config:
             parts.append(profile_name)
         parts.extend([prompt_name, h])
         return "@".join(parts)
+
+
+class EvalConfigLoader:
+    """加载评测配置（eval.yaml + prompts + domain_prompts）。
+
+    eval 命令使用。独立于 experiment.yaml，不加载实验配置。
+    """
+
+    def __init__(self, config_dir: Optional[Path] = None):
+        base = config_dir or CONFIG_DIR
+        self.prompts = _load_prompts(base / "prompts")
+        self.domain_prompts = _load_domain_prompts(base / "prompts" / "judge-domains")
+        self.eval_config = self._load_eval_config(base / "eval.yaml")
+
+    def _load_eval_config(self, path: Path) -> EvalConfig:
+        """加载并解析 eval.yaml，将 prompt 文件名替换为内容。"""
+        if not path.exists():
+            raise FileNotFoundError(
+                f"评测配置文件不存在: {path}\n"
+                f"请创建 config/eval.yaml 来配置评测模型。"
+            )
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        eval_cfg = EvalConfig(**data)
+
+        # 解析 prompt 文件名 → 内容
+        if eval_cfg.prompt not in self.prompts:
+            raise ValueError(
+                f"Judge prompt '{eval_cfg.prompt}' not found in config/prompts/. "
+                f"Available: {list(self.prompts.keys())}"
+            )
+        eval_cfg.prompt = self.prompts[eval_cfg.prompt].content
+        return eval_cfg
+
+    def get_eval(self) -> EvalConfig:
+        return self.eval_config

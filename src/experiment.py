@@ -15,7 +15,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from src.config import Config, ExperimentConfig
+from src.config import ExperimentConfigLoader, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import load_dataset, build_messages, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
 from src.models import create_client, call_model, call_model_stream
@@ -49,7 +49,7 @@ def save_run_meta(
         "prompt_name": experiment.prompt_name,
         "prompt_content": experiment.prompt,
         "dataset": str(saved_dataset),
-        "dataset_content_hash": Config.hash_file(saved_dataset),
+        "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset),
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(
@@ -105,7 +105,7 @@ def _append_response(path: Path, record: dict):
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-async def run_experiment(config: Config, run_name: str):
+async def run_experiment(config: ExperimentConfigLoader, run_name: str):
     """运行实验（支持断点续跑）。
 
     Args:

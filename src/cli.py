@@ -4,7 +4,6 @@
   run              运行实验（基于 experiment.yaml 配置）
   eval [run]       评测实验结果 (LLM-as-Judge)，默认评测最新实验
   import           从 Excel 导入已有数据（用于评测现网数据）
-  list             列出已有 run
   show <run>       查看实验结果摘要
   report <run>     生成 HTML 可视化报告
   export <run>     导出 Excel 文件
@@ -19,8 +18,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.config import Config
-from src.constants import RESULTS_DIR, META_FILE
+from src.config import ExperimentConfigLoader, EvalConfigLoader
+from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
 from src.importer import import_excel
@@ -73,9 +72,6 @@ def main():
     import_p.add_argument("--api-json-col", default="api_json", help="api_json 列名（默认 api_json）")
     import_p.add_argument("--domain-col", default="domain", help="垂域分类列名（默认 domain，可选）")
 
-    list_p = sub.add_parser("list", help="列出实验定义与已有 run")
-    list_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile")
-
     sub.add_parser("show", help="查看结果摘要").add_argument("run", help="run 名称（YAML key 或自动生成名）")
 
     report_p = sub.add_parser("report", help="生成 HTML 可视化报告")
@@ -88,29 +84,29 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run":
-        config = Config(profile=getattr(args, "profile", None))
-        exp = config.get_experiment()
-        run_name = args.name if args.name else Config.generate_run_name(
+        loader = ExperimentConfigLoader(profile=getattr(args, "profile", None))
+        exp = loader.get_experiment()
+        run_name = args.name if args.name else ExperimentConfigLoader.generate_run_name(
             exp.candidate, exp.prompt_name, exp.prompt,
-            exp.dataset, Config.hash_file(Path(exp.dataset)),
-            profile_name=config.profile_name,
+            exp.dataset, ExperimentConfigLoader.hash_file(Path(exp.dataset)),
+            profile_name=loader.profile_name,
         )
-        asyncio.run(run_experiment(config, run_name))
+        asyncio.run(run_experiment(loader, run_name))
     elif args.command == "eval":
         run_name = _resolve_run_name(args.run)
         if not run_name:
             return
 
-        config = Config()
         try:
-            eval_cfg = config.get_eval()
+            loader = EvalConfigLoader()
+            eval_cfg = loader.get_eval()
         except (FileNotFoundError, ValueError) as e:
             print(f"[error] {e}")
             return
 
         asyncio.run(run_evaluation(
             run_name, eval_cfg,
-            domain_prompts=config.domain_prompts,
+            domain_prompts=loader.domain_prompts,
             concurrency=args.concurrency,
             force=args.force,
         ))
@@ -126,53 +122,17 @@ def main():
         except Exception as e:
             print(f"[warn] Excel 导出失败: {e}")
     elif args.command == "import":
-        config = Config(profile=getattr(args, "profile", None))
+        loader = ExperimentConfigLoader(profile=getattr(args, "profile", None))
         import_excel(
             excel_path=args.excel,
             run_name=args.name,
-            config=config,
+            config=loader,
             query_col=args.query_col,
             response_col=args.response_col,
             api_json_col=args.api_json_col,
             domain_col=args.domain_col,
-            profile_name=config.profile_name,
+            profile_name=loader.profile_name,
         )
-    elif args.command == "list":
-        config = Config(profile=getattr(args, "profile", None))
-        # 显示 profiles 信息
-        if config.available_profiles:
-            print("=== 可用 Profiles ===")
-            for p in config.available_profiles:
-                marker = " ← 当前" if p == config.profile_name else ""
-                print(f"  {p}{marker}")
-            print()
-        exp = config.get_experiment()
-        print("=== 当前实验配置 ===")
-        print(f"  candidate: {exp.candidate.model}  prompt: {exp.prompt_name}  dataset: {exp.dataset}")
-        print()
-        # 显示评测配置（来自 eval.yaml）
-        try:
-            eval_cfg = config.get_eval()
-            print("=== 评测配置 (eval.yaml) ===")
-            print(f"  judge: {eval_cfg.model.model}  dims: {eval_cfg.dimensions}")
-        except FileNotFoundError:
-            print("=== 评测配置 ===")
-            print("  (未配置，请创建 config/eval.yaml)")
-        print()
-        if RESULTS_DIR.exists():
-            runs = [d.name for d in RESULTS_DIR.iterdir() if d.is_dir() and (d / "responses.jsonl").exists()]
-            if runs:
-                print("=== 已有 Run ===")
-                for r in sorted(runs):
-                    meta_path = RESULTS_DIR / r / META_FILE
-                    tag = ""
-                    if meta_path.exists():
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                        profile = meta.get("profile", "")
-                        profile_tag = f"  profile={profile}" if profile else ""
-                        candidate_info = meta.get("candidate", {})
-                        tag = f"  candidate={candidate_info.get('model', '?')}  prompt={meta.get('prompt_name', '?')}{profile_tag}"
-                    print(f"  {r}{tag}")
     elif args.command == "show":
         _show_experiment(args.run)
     elif args.command == "report":

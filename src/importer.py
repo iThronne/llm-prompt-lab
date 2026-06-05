@@ -8,7 +8,7 @@ import json
 
 import pandas as pd
 
-from src.config import Config
+from src.config import ExperimentConfigLoader
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import copy_dataset
 
@@ -16,7 +16,7 @@ from src.dataset import copy_dataset
 def import_excel(
         excel_path: str,
         run_name: str,
-        config: Config,
+        config: ExperimentConfigLoader,
         query_col: str = "query",
         response_col: str = "response",
         api_json_col: str = "api_json",
@@ -115,7 +115,7 @@ def import_excel(
         "prompt_name": exp.prompt_name,
         "prompt_content": exp.prompt,
         "dataset": str(saved_dataset_path),
-        "dataset_content_hash": Config.hash_file(saved_dataset_path),
+        "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset_path),
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
