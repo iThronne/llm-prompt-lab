@@ -26,7 +26,7 @@ python -m src.cli eval
 python -m src.cli eval --force
 
 # 查看摘要
-python -m src.cli show
+python -m src.cli show <run_name>
 ```
 
 ## 项目结构

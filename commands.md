@@ -34,6 +34,9 @@ python -m src.cli eval --concurrency 4
 
 # 指定实验 + 并发
 python -m src.cli eval <run_name> --concurrency 4
+
+# 强制重新评测（覆盖已有结果）
+python -m src.cli eval <run_name> --force
 ```
 
 ## 导入现网数据
@@ -44,20 +47,11 @@ python -m src.cli import data/production.xlsx --name prod-baseline
 
 # 指定列名
 python -m src.cli import data/production.xlsx --name prod-baseline --query-col query --response-col response
-
-# 导入并指定 profile
-python -m src.cli import data/production.xlsx --name prod-baseline --profile think
 ```
 
-## 查看实验
+## 查看结果
 
 ```bash
-# 列出所有实验
-python -m src.cli list
-
-# 列出指定 profile 的实验
-python -m src.cli list --profile think
-
 # 查看实验摘要
 python -m src.cli show <run_name>
 ```

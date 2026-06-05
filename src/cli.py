@@ -66,7 +66,6 @@ def main():
     import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
     import_p.add_argument("excel", help="Excel 文件路径")
     import_p.add_argument("--name", required=True, help="生成的 run 名称")
-    import_p.add_argument("--profile", "-p", help="选择 experiment.yaml 中的 profile（默认 default）")
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
     import_p.add_argument("--api-json-col", default="api_json", help="api_json 列名（默认 api_json）")
@@ -122,16 +121,13 @@ def main():
         except Exception as e:
             print(f"[warn] Excel 导出失败: {e}")
     elif args.command == "import":
-        loader = ExperimentConfigLoader(profile=getattr(args, "profile", None))
         import_excel(
             excel_path=args.excel,
             run_name=args.name,
-            config=loader,
             query_col=args.query_col,
             response_col=args.response_col,
             api_json_col=args.api_json_col,
             domain_col=args.domain_col,
-            profile_name=loader.profile_name,
         )
     elif args.command == "show":
         _show_experiment(args.run)

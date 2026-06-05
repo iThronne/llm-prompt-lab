@@ -16,26 +16,21 @@ from src.dataset import copy_dataset
 def import_excel(
         excel_path: str,
         run_name: str,
-        config: ExperimentConfigLoader,
         query_col: str = "query",
         response_col: str = "response",
         api_json_col: str = "api_json",
         domain_col: str = "domain",
-        profile_name: str = "",
 ):
     """从 Excel 导入数据，生成可供 eval 使用的 run 目录。
 
     Args:
         excel_path: Excel 文件路径
         run_name: 生成的 run 名称
-        config: 配置对象（用于获取 prompt 等配置）
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
         api_json_col: api_json 列名，默认 "api_json"
         domain_col: 垂域分类列名，默认 "domain"（可选，不存在则忽略）
-        profile_name: 使用的 profile 名称
     """
-    exp = config.get_experiment()
 
     # 读取 Excel
     df = pd.read_excel(excel_path)
@@ -107,13 +102,10 @@ def import_excel(
         print(f"[warn] {error_count} rows had invalid api_json")
 
     # 写入 meta.json
-    # 注意：导入的数据并非由当前配置的 candidate 模型产生，故不记录 candidate 信息
+    # 导入的数据并非由当前配置的 candidate 模型产生，故不记录 candidate/prompt 信息
     meta = {
         "run_name": run_name,
-        "profile": profile_name,
         "source": "imported",
-        "prompt_name": exp.prompt_name,
-        "prompt_content": exp.prompt,
         "dataset": str(saved_dataset_path),
         "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset_path),
     }
