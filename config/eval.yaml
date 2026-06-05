@@ -1,0 +1,11 @@
+# 评测配置 — LLM-as-Judge
+# 独立于 experiment.yaml，eval 命令运行时实时加载，可随时修改后重新评测。
+
+model:
+  provider: ali
+  model: qwen3.7-max
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  api_key_env: JUDGE_OPENAI_API_KEY
+  max_tokens: 4096
+prompt: judge-prompt.md
+dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall" ]

@@ -1,16 +1,14 @@
 """配置加载与校验模块。
 
-从 config/ 目录加载 experiment.yaml 以及 config/prompts/ 目录下的 prompt 文件，
-使用 Pydantic 做 schema 校验，提供类型安全的配置对象。
+从 config/ 目录加载配置文件，使用 Pydantic 做 schema 校验，提供类型安全的配置对象。
 
-experiment.yaml 结构：
-  - dataset: 数据集路径（所有 profile 共享）
-  - judge: 评测配置（所有 profile 共享，可选）
-  - profiles: 命名实验配置列表，每个 profile 包含完整的 candidate 和 prompt，
-    通过 --profile 选择。
+配置文件：
+  - experiment.yaml: 实验配置（dataset + profiles），run 命令使用
+  - eval.yaml: 评测配置（judge model + prompt + dimensions），eval 命令使用
+  - prompts/: 候选模型和评测模型的 prompt 文件
 
-运行时快照保存到 results/<run_name>/meta.json 保证可复现。
-输出文件：responses.jsonl（模型响应）、scores.jsonl（评分）、summary.json（汇总）。
+两个配置文件完全独立：run 只关心 experiment.yaml，eval 只关心 eval.yaml。
+运行时快照分别保存到 results/<run_name>/meta.json（run）和 eval_meta.json（eval）。
 """
 
 import hashlib
@@ -63,7 +61,9 @@ class PromptConfig(BaseModel):
     content: str
 
 
-class JudgeConfig(BaseModel):
+class EvalConfig(BaseModel):
+    """评测配置（LLM-as-Judge），从 eval.yaml 加载。"""
+
     model: ModelConfig
     prompt: str
     dimensions: list[str] = Field(
@@ -75,7 +75,6 @@ class ExperimentConfig(BaseModel):
     prompt: str
     prompt_name: str = ""
     dataset: str
-    judge: Optional[JudgeConfig] = None
 
 
 class Config:
@@ -83,7 +82,7 @@ class Config:
 
     支持两种 experiment.yaml 格式：
       - 单配置模式：整个文件为一组实验配置（简单场景）。
-      - 多 profile 模式：profiles 节定义多个完整配置，dataset/judge 共享。
+      - 多 profile 模式：profiles 节定义多个完整配置，dataset 共享。
     """
 
     def __init__(self, config_dir: Optional[Path] = None, profile: Optional[str] = None):
@@ -126,7 +125,7 @@ class Config:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
 
         if "profiles" in data:
-            # 多 profile 模式：profiles 内每个 profile 是完整配置，共享 dataset/judge
+            # 多 profile 模式：profiles 内每个 profile 是完整配置，共享 dataset
             profiles_data: dict = data.pop("profiles")
             self.available_profiles = sorted(profiles_data.keys())
 
@@ -137,8 +136,8 @@ class Config:
                 )
             self.profile_name = selected
 
-            # 共享配置（dataset, judge）+ 所选 profile（candidate, prompt）
-            shared = {k: v for k, v in data.items() if k in ("dataset", "judge")}
+            # 共享配置（dataset）+ 所选 profile（candidate, prompt）
+            shared = {k: v for k, v in data.items() if k == "dataset"}
             profile_data = profiles_data[selected]
             merged = {**shared, **profile_data}
             exp = ExperimentConfig(**merged)
@@ -156,13 +155,6 @@ class Config:
                 f"Available: {list(self.prompts.keys())}"
             )
         exp.prompt = self.prompts[exp.prompt].content
-        if exp.judge:
-            if exp.judge.prompt not in self.prompts:
-                raise ValueError(
-                    f"Judge prompt '{exp.judge.prompt}' not found in config/prompts/. "
-                    f"Available: {list(self.prompts.keys())}"
-                )
-            exp.judge.prompt = self.prompts[exp.judge.prompt].content
         return exp
 
     def get_prompt(self, name: str) -> PromptConfig:
@@ -172,6 +164,31 @@ class Config:
 
     def get_experiment(self) -> ExperimentConfig:
         return self.experiment
+
+    def get_eval(self) -> EvalConfig:
+        """加载评测配置（eval.yaml）。
+
+        从 config/eval.yaml 读取 judge 模型配置，并解析 prompt 文件。
+        如果 eval.yaml 不存在则抛出 FileNotFoundError。
+        """
+        eval_path = CONFIG_DIR / "eval.yaml"
+        if not eval_path.exists():
+            raise FileNotFoundError(
+                f"评测配置文件不存在: {eval_path}\n"
+                f"请创建 config/eval.yaml 来配置评测模型。"
+            )
+
+        data = yaml.safe_load(eval_path.read_text(encoding="utf-8"))
+        eval_cfg = EvalConfig(**data)
+
+        # 解析 prompt 文件名 → 内容
+        if eval_cfg.prompt not in self.prompts:
+            raise ValueError(
+                f"Judge prompt '{eval_cfg.prompt}' not found in config/prompts/. "
+                f"Available: {list(self.prompts.keys())}"
+            )
+        eval_cfg.prompt = self.prompts[eval_cfg.prompt].content
+        return eval_cfg
 
     @staticmethod
     def hash_file(path: Path) -> str:

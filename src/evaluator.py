@@ -2,42 +2,63 @@
 
 读取 responses.jsonl，用 Judge 模型对每条结果打分。
 逐条评分写入 scores.jsonl，汇总统计写入 summary.json。
+
+评测配置从 eval.yaml 实时加载（不依赖 run 时的 meta.json 快照），
+通过 eval_meta.json 记录当次评测使用的配置 hash，
+实现断点续评（hash 相同）和配置变更检测（hash 不同）。
 """
 
 import asyncio
+import hashlib
 import json
 import re
 from pathlib import Path
 
 from tqdm import tqdm
 
-from src.config import ModelConfig
+from src.config import EvalConfig
 from src.constants import RESULTS_DIR
-from src.experiment import load_run_meta
 from src.models import create_client, call_model, call_model_stream
 from src.reporter import load_responses, load_scores
 
 JUDGE_SEED = 7
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
+EVAL_META_FILE = "eval_meta.json"
 
 
-async def run_evaluation(run_name: str, concurrency: int = 1):
+def compute_eval_hash(eval_cfg: EvalConfig, domain_prompts: dict[str, str]) -> str:
+    """计算评测配置的 hash，用于检测配置变更。"""
+    payload = {
+        "model": eval_cfg.model.model_dump(),
+        "prompt": eval_cfg.prompt,
+        "dimensions": eval_cfg.dimensions,
+        "domain_prompts": domain_prompts,
+    }
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
+    return hashlib.md5(canonical.encode()).hexdigest()[:8]
+
+
+async def run_evaluation(
+    run_name: str,
+    eval_cfg: EvalConfig,
+    domain_prompts: dict[str, str] | None = None,
+    concurrency: int = 1,
+    force: bool = False,
+):
     """对实验结果进行 LLM-as-Judge 评测。
 
     Args:
         run_name: 实验 run 名称
+        eval_cfg: 评测配置（从 eval.yaml 加载）
+        domain_prompts: 垂域评测标准
         concurrency: 并发评测数，默认 1（串行）
+        force: 配置变更时是否强制重新评测
     """
-    meta = load_run_meta(run_name)
-    if not meta.get("judge"):
-        print(f"[skip] run '{run_name}' has no judge config in meta.json")
-        return
-
-    judge_data = meta["judge"]
-    judge_model_cfg = ModelConfig(**judge_data["model"])
+    domain_prompts = domain_prompts or {}
+    judge_model_cfg = eval_cfg.model
     client = create_client(judge_model_cfg)
-    domain_prompts = meta.get("domain_prompts", {})
+
     if domain_prompts:
         print(f"[info] domain prompts loaded: {list(domain_prompts.keys())}")
 
@@ -51,24 +72,55 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
         print(f"[error] no valid results found in {responses_path}")
         return
 
-    scores_path = RESULTS_DIR / run_name / "scores.jsonl"
-    summary_path = RESULTS_DIR / run_name / "summary.json"
+    result_dir = RESULTS_DIR / run_name
+    scores_path = result_dir / "scores.jsonl"
+    summary_path = result_dir / "summary.json"
+    eval_meta_path = result_dir / EVAL_META_FILE
 
-    # 加载已有评测结果，支持断点续评
+    # 计算当前评测配置的 hash
+    current_hash = compute_eval_hash(eval_cfg, domain_prompts)
+
+    # 检查已有评测结果和配置 hash
     existing_scores = load_scores(scores_path)
-    done_count = len(existing_scores)
-    if done_count > 0:
-        print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
+    if existing_scores:
+        old_hash = None
+        if eval_meta_path.exists():
+            old_meta = json.loads(eval_meta_path.read_text(encoding="utf-8"))
+            old_hash = old_meta.get("eval_config_hash")
+
+        if old_hash and old_hash != current_hash:
+            if not force:
+                print(f"[warn] 评测配置已变更 (hash: {old_hash} → {current_hash})")
+                print(f"  已有 {len(existing_scores)} 条评分结果，当前配置与上次不同。")
+                print(f"  如需重新评测，请先手动删除以下文件后重试：")
+                print(f"    {scores_path}")
+                print(f"    {eval_meta_path}")
+                print(f"    {summary_path}")
+                print(f"  或使用 --force 强制覆盖。")
+                return
+            else:
+                print(f"[force] 评测配置已变更 (hash: {old_hash} → {current_hash})，清空旧结果")
+                for f in (scores_path, eval_meta_path, summary_path):
+                    if f.exists():
+                        f.unlink()
+                existing_scores = {}
+        elif not old_hash:
+            # 旧的评测结果（无 eval_meta.json），当作配置未变处理，允许续评
+            print(f"[info] 发现旧评测结果（无 eval_meta.json），以当前配置续评")
+        else:
+            # hash 相同，正常断点续评
+            done_count = len(existing_scores)
+            print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
 
     # 筛选待评测的条目
     pending = [r for r in results if r["row_index"] not in existing_scores]
 
     if pending:
-        system_prompt = judge_data["prompt"]
-        dims = judge_data["dimensions"]
+        system_prompt = eval_cfg.prompt
+        dims = eval_cfg.dimensions
         semaphore = asyncio.Semaphore(concurrency)
         write_lock = asyncio.Lock()
-        pbar = tqdm(total=len(results), initial=done_count, desc=f"eval/{run_name}", unit="item")
+        pbar = tqdm(total=len(results), initial=len(existing_scores), desc=f"eval/{run_name}", unit="item")
 
         if concurrency > 1:
             print(f"[info] 并发评测: concurrency={concurrency}")
@@ -138,15 +190,26 @@ async def run_evaluation(run_name: str, concurrency: int = 1):
     # 按 row_index 排序后重写 scores.jsonl
     _sort_scores(scores_path, existing_scores)
 
+    # 写入 eval_meta.json（记录本次评测的配置快照）
+    eval_meta = {
+        "eval_config_hash": current_hash,
+        "judge": eval_cfg.model_dump(),
+        "domain_prompts": domain_prompts,
+    }
+    eval_meta_path.write_text(
+        json.dumps(eval_meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
-    summary = _compute_summary(all_scores, judge_data["dimensions"])
+    summary = _compute_summary(all_scores, eval_cfg.dimensions)
     failed_count = len(results) - len(all_scores)
 
     output = {
         "experiment": run_name,
         "judge_model": judge_model_cfg.model,
-        "dimensions": judge_data["dimensions"],
+        "dimensions": eval_cfg.dimensions,
         "summary": summary,
         "total_scored": len(all_scores),
         "failed_count": failed_count,

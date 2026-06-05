@@ -28,7 +28,7 @@ def import_excel(
     Args:
         excel_path: Excel 文件路径
         run_name: 生成的 run 名称
-        config: 配置对象（用于获取 judge 配置）
+        config: 配置对象（用于获取 prompt 等配置）
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
         api_json_col: api_json 列名，默认 "api_json"
@@ -116,8 +116,6 @@ def import_excel(
         "prompt_content": exp.prompt,
         "dataset": str(saved_dataset_path),
         "dataset_content_hash": Config.hash_file(saved_dataset_path),
-        "judge": exp.judge.model_dump() if exp.judge else None,
-        "domain_prompts": config.domain_prompts,
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

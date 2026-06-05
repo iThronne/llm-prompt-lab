@@ -28,9 +28,12 @@ def save_run_meta(
     run_name: str,
     experiment: ExperimentConfig,
     profile_name: str = "",
-    domain_prompts: dict[str, str] | None = None,
 ):
-    """Save run metadata (full experiment config snapshot) for reproducibility."""
+    """Save run metadata (experiment config snapshot) for reproducibility.
+
+    只保存与模型推理相关的配置（candidate、prompt、dataset），
+    评测配置（judge）由 eval 命令独立管理。
+    """
     result_dir = RESULTS_DIR / run_name
     result_dir.mkdir(parents=True, exist_ok=True)
 
@@ -47,8 +50,6 @@ def save_run_meta(
         "prompt_content": experiment.prompt,
         "dataset": str(saved_dataset),
         "dataset_content_hash": Config.hash_file(saved_dataset),
-        "judge": experiment.judge.model_dump() if experiment.judge else None,
-        "domain_prompts": domain_prompts or {},
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(
@@ -114,7 +115,7 @@ async def run_experiment(config: Config, run_name: str):
     exp = config.get_experiment()
     model_cfg = exp.candidate
 
-    save_run_meta(run_name, exp, profile_name=config.profile_name, domain_prompts=config.domain_prompts)
+    save_run_meta(run_name, exp, profile_name=config.profile_name)
 
     client = create_client(model_cfg)
     rows = load_dataset(exp.dataset)

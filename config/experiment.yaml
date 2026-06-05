@@ -1,20 +1,8 @@
 # 实验配置 — 多 profile 模式
 # profiles 节定义多个完整的候选模型配置，通过 --profile 选择。
-# dataset 和 judge 为所有 profile 共享。
+# 评测（judge）配置在 eval.yaml 中独立维护。
 
 dataset: data/example.xlsx
-
-# 评测模型（judge）配置 — 所有 profile 共享
-# 支持 stream: true（流式调用）和 use_proxy: true（代理 + 禁用 SSL）
-judge:
-  model:
-    provider: ali
-    model: qwen3.7-max
-    base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-    api_key_env: JUDGE_OPENAI_API_KEY
-    max_tokens: 4096
-  prompt: judge-prompt.md
-  dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall" ]
 
 # ── Profiles ────────────────────────────────────────────────────────
 # 每个 profile 包含完整的 candidate 配置和 prompt。

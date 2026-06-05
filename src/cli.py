@@ -62,6 +62,7 @@ def main():
     eval_p = sub.add_parser("eval", help="评测实验结果")
     eval_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
     eval_p.add_argument("--concurrency", "-c", type=int, default=1, help="并发评测数（默认 1，即串行）")
+    eval_p.add_argument("--force", action="store_true", help="评测配置变更时强制重新评测（清空旧结果）")
 
     import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
     import_p.add_argument("excel", help="Excel 文件路径")
@@ -100,7 +101,19 @@ def main():
         if not run_name:
             return
 
-        asyncio.run(run_evaluation(run_name, concurrency=args.concurrency))
+        config = Config()
+        try:
+            eval_cfg = config.get_eval()
+        except (FileNotFoundError, ValueError) as e:
+            print(f"[error] {e}")
+            return
+
+        asyncio.run(run_evaluation(
+            run_name, eval_cfg,
+            domain_prompts=config.domain_prompts,
+            concurrency=args.concurrency,
+            force=args.force,
+        ))
         # 评测完成后自动生成报告和导出
         try:
             html_path = generate_html_report(run_name)
@@ -136,8 +149,15 @@ def main():
         exp = config.get_experiment()
         print("=== 当前实验配置 ===")
         print(f"  candidate: {exp.candidate.model}  prompt: {exp.prompt_name}  dataset: {exp.dataset}")
-        if exp.judge:
-            print(f"  judge: {exp.judge.model.model}  dims: {exp.judge.dimensions}")
+        print()
+        # 显示评测配置（来自 eval.yaml）
+        try:
+            eval_cfg = config.get_eval()
+            print("=== 评测配置 (eval.yaml) ===")
+            print(f"  judge: {eval_cfg.model.model}  dims: {eval_cfg.dimensions}")
+        except FileNotFoundError:
+            print("=== 评测配置 ===")
+            print("  (未配置，请创建 config/eval.yaml)")
         print()
         if RESULTS_DIR.exists():
             runs = [d.name for d in RESULTS_DIR.iterdir() if d.is_dir() and (d / "responses.jsonl").exists()]
