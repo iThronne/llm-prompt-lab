@@ -224,6 +224,7 @@
         }
         .expand-section {
             margin-bottom: 16px;
+            position: relative;
         }
         .expand-label {
             font-weight: 600;
@@ -240,6 +241,33 @@
             border: 1px solid #eee;
             max-height: 400px;
             overflow-y: auto;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            z-index: 1;
+        }
+        .copy-btn:hover {
+            background: #e8e8e8;
+        }
+        .copy-btn svg {
+            width: 14px;
+            height: 14px;
+            fill: #999;
+        }
+        .copy-btn.copied svg {
+            fill: #22c55e;
         }
         .score-badge {
             display: inline-block;
@@ -582,35 +610,53 @@
                     <td colspan="${getColspan()}">
                         <div class="expand-content">
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'query-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">Query</div>
-                                <div class="expand-text">${escapeHtml(row.query)}</div>
+                                <div class="expand-text" id="query-${row.row_index}">${escapeHtml(row.query)}</div>
                             </div>
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'response-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">Response</div>
-                                <div class="expand-text">${escapeHtml(row.response)}</div>
+                                <div class="expand-text" id="response-${row.row_index}">${escapeHtml(row.response)}</div>
                             </div>
                             ${row.reasoning ? `
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'reasoning-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">Reasoning</div>
-                                <div class="expand-text">${escapeHtml(row.reasoning)}</div>
+                                <div class="expand-text" id="reasoning-${row.row_index}">${escapeHtml(row.reasoning)}</div>
                             </div>
                             ` : ''}
                             ${row.search_queries ? `
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'queries-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">搜索关键词</div>
-                                <div class="expand-text">${escapeHtmlWithNewlines(row.search_queries)}</div>
+                                <div class="expand-text" id="queries-${row.row_index}">${escapeHtmlWithNewlines(row.search_queries)}</div>
                             </div>
                             ` : ''}
                             ${row.search_results ? `
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'search-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">搜索结果</div>
-                                <div class="expand-text">${escapeHtmlWithNewlines(row.search_results)}</div>
+                                <div class="expand-text" id="search-${row.row_index}">${escapeHtmlWithNewlines(row.search_results)}</div>
                             </div>
                             ` : ''}
                             ${row.analysis ? `
                             <div class="expand-section">
+                                <button class="copy-btn" title="复制" onclick="copyText(this, 'analysis-${row.row_index}')">
+                                    <svg viewBox="0 0 24 24"><path d="M16 1H4C3 1 2 2 2 3v14h2V3h12V1zm3 4H8C7 5 6 6 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                </button>
                                 <div class="expand-label">评分分析</div>
-                                <div class="expand-text">${escapeHtmlWithNewlines(row.analysis)}</div>
+                                <div class="expand-text" id="analysis-${row.row_index}">${escapeHtmlWithNewlines(row.analysis)}</div>
                             </div>
                             ` : ''}
                         </div>
@@ -669,6 +715,16 @@
 
         function escapeHtmlWithNewlines(text) {
             return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        function copyText(btn, elementId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            const text = el.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                btn.classList.add('copied');
+                setTimeout(() => btn.classList.remove('copied'), 1500);
+            });
         }
 
         // 初始化表格
