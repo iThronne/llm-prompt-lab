@@ -101,8 +101,29 @@ def _extract_usage(response: dict) -> dict:
         return {}
 
 
+def _extract_search_queries(rendered_request: dict | None) -> str:
+    """从 rendered_request 中提取搜索关键词（tool_calls 中的 queries）。
+
+    Returns:
+        格式化的搜索关键词文本，如无搜索则返回空字符串
+    """
+    if not rendered_request:
+        return ""
+
+    messages = rendered_request.get("messages", [])
+    parts = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                func = tc.get("function", {})
+                args = func.get("arguments", "")
+                parts.append(args)
+
+    return "\n\n".join(parts)
+
+
 def _extract_search_results(rendered_request: dict | None) -> str:
-    """从 rendered_request 中提取搜索结果（tool_calls 和 tool 消息）。
+    """从 rendered_request 中提取搜索结果（tool 消息）。
 
     Returns:
         格式化的搜索结果文本，如无搜索则返回空字符串
@@ -111,20 +132,11 @@ def _extract_search_results(rendered_request: dict | None) -> str:
         return ""
 
     messages = rendered_request.get("messages", [])
-    if not messages:
-        return ""
-
     parts = []
     for msg in messages:
-        role = msg.get("role")
-        if role == "assistant" and msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                func = tc.get("function", {})
-                args = func.get("arguments", "")
-                parts.append(f"[搜索关键词]\n{args}")
-        elif role == "tool":
+        if msg.get("role") == "tool":
             content = msg.get("content", "")
-            parts.append(f"[搜索结果]\n{content}")
+            parts.append(content)
 
     return "\n\n".join(parts)
 
@@ -199,6 +211,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning": _extract_reasoning_text(response),
+            "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
@@ -313,6 +326,7 @@ def export_excel(run_name: str) -> Path:
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
             "reasoning_content": _extract_reasoning_text(response),
+            "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
