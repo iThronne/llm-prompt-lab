@@ -10,4 +10,4 @@ model:
   extra_body:
     enable_search: true
 prompt: judge-prompt.md
-dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall" ]
+dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall" ]

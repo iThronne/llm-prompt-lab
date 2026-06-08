@@ -179,6 +179,8 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
         "structure": "结构化",
         "timeliness": "实时性",
         "localization": "本地化",
+        "search_planning": "搜索规划",
+        "search_results": "搜索结果",
         "search_quality": "搜索质量",
         "overall": "综合"
     }

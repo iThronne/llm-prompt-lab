@@ -137,7 +137,7 @@ model:
   api_key_env: JUDGE_OPENAI_API_KEY
   max_tokens: 4096
 prompt: judge-prompt.md
-dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_quality", "overall"]
+dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall"]
 ```
 
 ### 核心概念
@@ -344,7 +344,7 @@ python -m src.cli import my_dataset
 
 ### 评分维度
 
-默认评测八个维度（每个维度 1-5 分），可在 `eval.yaml` 的 `dimensions` 中自定义：
+默认评测十个维度（每个维度 1-5 分），可在 `eval.yaml` 的 `dimensions` 中自定义：
 
 | 维度 | 说明 |
 |------|------|
@@ -354,7 +354,9 @@ python -m src.cli import my_dataset
 | structure（结构化） | 回复组织是否清晰合理 |
 | timeliness（实时性） | 回复是否考虑了时间敏感性（新闻、金价、天气等） |
 | localization（本地化） | 回复是否适配了用户的语言和位置偏好 |
-| search_quality（搜索质量） | 联网搜索的关键词选择、结果筛选及利用质量 |
+| search_planning（搜索规划） | 搜索关键词是否合理、能否有效服务于用户 Query |
+| search_results（搜索结果） | 搜索结果是否贴合 Query，是否包含无关结果，是否足以支撑回答 |
+| search_quality（搜索质量） | 模型对搜索结果的筛选判断与利用质量 |
 | overall（综合评分） | 整体质量评价 |
 
 评分标准详见 `config/prompts/judge-prompt.md`。
