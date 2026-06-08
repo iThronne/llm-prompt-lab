@@ -40,6 +40,9 @@ llm-prompt-lab/
 │       ├── candidate-prompt.md            # 被测模型 system prompt
 │       └── judge-prompt.md                # Judge 评分标准
 ├── data/                                  # 数据集（Excel）
+├── raw_data/                              # 原始日志数据
+├── scripts/
+│   └── import_summarybox.py               # Summarybox 日志导入工具
 ├── src/
 │   ├── cli.py                             # CLI 入口
 │   ├── config.py                          # Pydantic 配置加载与校验
@@ -303,6 +306,26 @@ python -m src.cli eval prod-eval
 ```
 
 导入命令在 `results/<run_name>/` 下生成 `responses.jsonl` 和 `meta.json`（标记 `"source": "imported"`），之后可像正常实验一样评测。
+
+### 从 Summarybox 日志导入
+
+如果数据来源是 Summarybox 日志（`raw_data/summarybox_log.xlsx`），可使用 `scripts/import_summarybox.py` 将日志中的 QA 记录转换为标准数据集格式：
+
+```bash
+# 默认输出到 data/summarybox_import.xlsx
+python scripts/import_summarybox.py
+
+# 指定输出名
+python scripts/import_summarybox.py my_dataset
+
+# 指定输入路径
+python scripts/import_summarybox.py my_dataset --input raw_data/summarybox_log.xlsx
+
+# 生成后导入到 eval
+python -m src.cli import my_dataset
+```
+
+脚本会筛选 `classification == "QA"` 的行，解码多层嵌套的 `log_json`（含 HTML unescape 与截断修复），提取 `query`、`answer`（→ `response`）、`prompt`（→ `api_json`）三列，输出与 `importer.py` 完全对齐的标准数据集。
 
 ## 断点续跑
 

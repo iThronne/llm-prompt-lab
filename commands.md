@@ -49,6 +49,19 @@ python -m src.cli import data/production.xlsx --name prod-baseline
 python -m src.cli import data/production.xlsx --name prod-baseline --query-col query --response-col response
 ```
 
+### 从 Summarybox 日志导入
+
+```bash
+# 将 summarybox 日志转为标准数据集
+python scripts/import_summarybox.py
+
+# 指定输出名
+python scripts/import_summarybox.py my_dataset
+
+# 生成后导入评测
+python -m src.cli import my_dataset
+```
+
 ## 查看结果
 
 ```bash
