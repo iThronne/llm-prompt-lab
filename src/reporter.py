@@ -117,6 +117,8 @@ def _extract_search_queries(rendered_request: dict | None) -> str:
             for tc in msg["tool_calls"]:
                 func = tc.get("function", {})
                 args = func.get("arguments", "")
+                if isinstance(args, dict):
+                    args = json.dumps(args, ensure_ascii=False)
                 parts.append(args)
 
     return "\n\n".join(parts)
@@ -136,6 +138,8 @@ def _extract_search_results(rendered_request: dict | None) -> str:
     for msg in messages:
         if msg.get("role") == "tool":
             content = msg.get("content", "")
+            if isinstance(content, (dict, list)):
+                content = json.dumps(content, ensure_ascii=False)
             parts.append(content)
 
     return "\n\n".join(parts)
