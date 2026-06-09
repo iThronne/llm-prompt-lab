@@ -25,7 +25,7 @@ from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
 from src.importer import import_excel
-from src.reporter import generate_html_report, export_excel
+from src.reporter import generate_html_report, export_excel, export_responses
 
 
 def _resolve_run_name(run_name: str | None) -> str | None:
@@ -96,6 +96,11 @@ def main():
             profile_name=loader.profile_name,
         )
         asyncio.run(run_experiment(loader, run_name))
+        try:
+            path = export_responses(run_name)
+            print(f"[done] responses.xlsx 已导出 → {path}")
+        except Exception as e:
+            print(f"[warn] responses.xlsx 导出失败: {e}")
     elif args.command == "eval":
         run_name = _resolve_run_name(args.run)
         if not run_name:

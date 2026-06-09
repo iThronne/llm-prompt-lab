@@ -362,3 +362,56 @@ def export_excel(run_name: str) -> Path:
             df_scores.to_excel(writer, sheet_name="Scores", index=False)
 
     return export_path
+
+
+def export_responses(run_name: str) -> Path:
+    """导出 responses.jsonl 为 responses.xlsx（仅 Summary + Responses sheet）。
+
+    Args:
+        run_name: 实验运行名称
+
+    Returns:
+        生成的 Excel 文件路径
+    """
+    result_dir = RESULTS_DIR / run_name
+    responses_path = result_dir / "responses.jsonl"
+
+    if not responses_path.exists():
+        raise FileNotFoundError(f"No results for '{run_name}' at {responses_path}")
+
+    responses = load_responses(responses_path)
+
+    # Summary sheet
+    summary_data = [
+        {"Key": "Experiment", "Value": run_name},
+        {"Key": "Total Rows", "Value": len(responses)},
+    ]
+    df_summary = pd.DataFrame(summary_data)
+
+    # Responses sheet
+    rows_data = []
+    for r in responses:
+        response = r.get("response", {})
+        usage = _extract_usage(response)
+        rows_data.append({
+            "row_index": r["row_index"],
+            "query": r.get("query", ""),
+            "response": _extract_response_text(response),
+            "reasoning_content": _extract_reasoning_text(response),
+            "search_queries": _extract_search_queries(r.get("rendered_request")),
+            "search_results": _extract_search_results(r.get("rendered_request")),
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "latency_ms": r.get("latency_ms"),
+            "ttft_ms": r.get("ttft_ms"),
+            "finish_reason": response.get("choices", [{}])[0].get("finish_reason"),
+        })
+    df_responses = pd.DataFrame(rows_data)
+
+    export_path = result_dir / "responses.xlsx"
+    with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
+        df_summary.to_excel(writer, sheet_name="Summary", index=False)
+        df_responses.to_excel(writer, sheet_name="Responses", index=False)
+
+    return export_path
