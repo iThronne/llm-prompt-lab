@@ -7,6 +7,7 @@
   show <run>       查看实验结果摘要
   report <run>     生成 HTML 可视化报告
   export <run>     导出 Excel 文件
+  calibrate [run]  对比人工评分与 Judge 评分，生成校准报告
 """
 
 import argparse
@@ -18,6 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from src.calibrate import generate_calibration_report
 from src.config import ExperimentConfigLoader, EvalConfigLoader
 from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
@@ -79,6 +81,9 @@ def main():
 
     export_p = sub.add_parser("export", help="导出 Excel 文件")
     export_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
+
+    calibrate_p = sub.add_parser("calibrate", help="对比人工评分与 Judge 评分")
+    calibrate_p.add_argument("run", nargs="?", help="run 名称（可选，默认最新）")
 
     args = parser.parse_args()
 
@@ -149,6 +154,15 @@ def main():
         try:
             path = export_excel(run_name)
             print(f"[done] Excel 已导出 → {path}")
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
+    elif args.command == "calibrate":
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+        try:
+            path = generate_calibration_report(run_name)
+            print(f"[done] 校准报告已更新 → {path}")
         except FileNotFoundError as e:
             print(f"[error] {e}")
 

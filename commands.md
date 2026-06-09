@@ -85,13 +85,27 @@ python -m src.cli export
 python -m src.cli export <run_name>
 ```
 
+## 人工评估校准
+
+```bash
+# 对比人工评分与 Judge 评分（需先在 run 目录下创建 analysis_by_human.xlsx）
+python -m src.cli calibrate
+
+# 指定实验
+python -m src.cli calibrate <run_name>
+```
+
+`analysis_by_human.xlsx` 格式：包含 `row_index`、`query`、`analysis_by_human` 三列。运行 calibrate 后自动追加 Calibration 页到 report.xlsx。
+
 ## 典型工作流
 
 ```bash
-# 完整流程：运行 → 评测 → 报告
+# 完整流程：运行 → 评测 → 报告 → 人工校准
 python -m src.cli run --profile default
 python -m src.cli eval --concurrency 4
 python -m src.cli report --no-open
+# 人工评估后：在 run 目录下创建 analysis_by_human.xlsx，然后运行
+python -m src.cli calibrate
 
 # 对比两个 profile
 python -m src.cli run --profile default --name exp-default

@@ -62,6 +62,7 @@ llm-prompt-lab/
         ├── responses.jsonl                # 模型逐条响应
         ├── scores.jsonl                   # Judge 逐条评分
         ├── summary.json                   # 评测汇总统计
+        ├── analysis_by_human.xlsx         # 人工评估结果（可选，用于校准）
         ├── report.html                    # HTML 可视化报告
         └── report.xlsx                    # Excel 导出文件
 ```
@@ -273,6 +274,10 @@ python -m src.cli report --no-open           # 不自动打开浏览器
 python -m src.cli export
 python -m src.cli export <run_name>
 
+# 对比人工评分与 Judge 评分（省略 run_name 时使用最新实验）
+python -m src.cli calibrate
+python -m src.cli calibrate <run_name>
+
 # 从 Excel 导入现网数据用于评测
 python -m src.cli import <excel> --name <run_name>
 python -m src.cli import data/prod.xlsx --name prod-20240530 \
@@ -288,10 +293,11 @@ python -m src.cli show <run_name>
 | `eval` | LLM-as-Judge 评测（从 eval.yaml 读取配置，支持 `--force`） |
 | `report` | 生成 HTML 可视化报告 |
 | `export` | 导出 Excel 文件 |
+| `calibrate` | 对比人工评分与 Judge 评分 |
 | `import` | 从 Excel 导入现网数据 |
 | `show` | 查看结果摘要 |
 
-`run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
+`run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export`、`calibrate` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
 
 ### 导入现网数据
 
@@ -418,6 +424,24 @@ python -m src.cli eval --force
 - **Summary**：实验元信息 + 评分汇总
 - **Responses**：逐条响应数据（query、response、reasoning、token 用量、延迟等）
 - **Scores**：逐条评分数据（如有评测）
+
+### 人工评估校准
+
+如果对 Judge 评分有疑虑，可以进行人工评估并与 Judge 评分对比：
+
+1. 在 `results/<run_name>/` 下创建 `analysis_by_human.xlsx`，包含三列：
+   - `row_index`：与 `responses.jsonl` 中的行号对应
+   - `query`：用户问题原文
+   - `analysis_by_human`：人工评估意见（自由文本）
+
+2. 运行校准命令，自动追加 Calibration 页到 report.xlsx：
+
+```bash
+python -m src.cli calibrate
+python -m src.cli calibrate <run_name>
+```
+
+Calibration 页并排展示每条数据的 Judge 各维度评分与人工评估意见，方便逐条对比差异。
 
 ## Run 名称生成
 
