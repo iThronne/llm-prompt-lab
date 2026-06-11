@@ -91,6 +91,10 @@ def main():
         "--skip-empty", action="store_true", default=True,
         help="跳过空单元格（默认开启）",
     )
+    parser.add_argument(
+        "--save-interval", type=int, default=20,
+        help="每翻译 N 行保存一次（默认 20），防止中断丢失进度",
+    )
 
     args = parser.parse_args()
 
@@ -151,24 +155,33 @@ def main():
     # 创建客户端并翻译
     client = create_client()
     model = args.model
-
-    translated = []
-    for text in tqdm(texts_to_translate, desc="翻译中"):
-        try:
-            result = translate_text(client, text, model)
-            translated.append(result)
-        except Exception as e:
-            print(f"\n[warn] 翻译失败: {text[:50]}... → {e}")
-            translated.append(f"[翻译失败] {text}")
-
-    # 写入结果
-    for idx, translation in zip(indices_to_translate, translated):
-        df.iloc[idx, target_col_idx] = translation
-
-    # 保存
+    save_interval = args.save_interval
     output_path = Path(args.output) if args.output else excel_path
-    df.to_excel(output_path, index=False)
-    print(f"[done] 翻译完成，共处理 {len(translated)} 行 → {output_path}")
+
+    total = len(texts_to_translate)
+    translated_count = 0
+
+    pbar = tqdm(total=total, desc="翻译中")
+    for batch_start in range(0, total, save_interval):
+        batch_end = min(batch_start + save_interval, total)
+        batch_texts = texts_to_translate[batch_start:batch_end]
+        batch_indices = indices_to_translate[batch_start:batch_end]
+
+        for text, idx in zip(batch_texts, batch_indices):
+            try:
+                result = translate_text(client, text, model)
+                df.iloc[idx, target_col_idx] = result
+            except Exception as e:
+                print(f"\n[warn] 翻译失败 (行 {idx}): {text[:50]}... → {e}")
+                df.iloc[idx, target_col_idx] = f"[翻译失败] {text}"
+            translated_count += 1
+            pbar.update(1)
+
+        # 每批保存一次，防止中断丢失进度
+        df.to_excel(output_path, index=False)
+
+    pbar.close()
+    print(f"[done] 翻译完成，共处理 {translated_count} 行 → {output_path}")
 
 
 if __name__ == "__main__":
