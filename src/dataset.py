@@ -15,7 +15,7 @@ import pandas as pd
 # 数据集必需列
 REQUIRED_COLUMNS = ["query", "api_json"]
 # 数据集可选列（用于 locale / 垂域 上下文注入）
-OPTIONAL_COLUMNS = ["language", "location", "domain"]
+OPTIONAL_COLUMNS = ["language", "location"]
 
 
 def copy_dataset(src_path: str, dest_path: Path, columns: list[str]) -> Path:
@@ -61,7 +61,7 @@ def load_dataset(excel_path: str) -> list[dict]:
     records = df[cols].to_dict("records")
     # 填充空值（NaN → None）
     for r in records:
-        for key in ("language", "location", "domain"):
+        for key in ("language", "location"):
             if key not in r or pd.isna(r.get(key)):
                 r[key] = None
     return records

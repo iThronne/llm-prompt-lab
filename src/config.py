@@ -74,7 +74,7 @@ class EvalConfig(BaseModel):
     model: ModelConfig
     prompt: str
     dimensions: list[str] = Field(
-        default_factory=lambda: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall"])
+        default_factory=lambda: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_relevance", "search_utilization", "overall"])
     sanitize: list[SanitizeRule] = Field(default_factory=list)
 
 
@@ -99,21 +99,6 @@ def _load_prompts(path: Path) -> dict[str, PromptConfig]:
         for prompt_file in sorted(path.glob(f"*{ext}")):
             prompts[prompt_file.name] = PromptConfig(content=prompt_file.read_text(encoding="utf-8"))
     return prompts
-
-
-def _load_domain_prompts(path: Path) -> dict[str, str]:
-    """扫描 config/prompts/judge-domains/ 目录，加载垂域评测标准。
-
-    key 为文件名去掉扩展名（如 coding.md → coding），
-    value 为文件内容。数据集的 domain 字段值需与 key 匹配。
-    """
-    if not path.exists():
-        return {}
-    domain_prompts: dict[str, str] = {}
-    for ext in PROMPT_EXTENSIONS:
-        for f in sorted(path.glob(f"*{ext}")):
-            domain_prompts[f.stem] = f.read_text(encoding="utf-8")
-    return domain_prompts
 
 
 class ExperimentConfigLoader:
@@ -226,7 +211,6 @@ class EvalConfigLoader:
     def __init__(self, config_dir: Optional[Path] = None):
         base = config_dir or CONFIG_DIR
         self.prompts = _load_prompts(base / "prompts")
-        self.domain_prompts = _load_domain_prompts(base / "prompts" / "judge-domains")
         self.eval_config = self._load_eval_config(base / "eval.yaml")
 
     def _load_eval_config(self, path: Path) -> EvalConfig:

@@ -28,13 +28,12 @@ RETRY_BASE_DELAY = 2  # seconds
 EVAL_META_FILE = "eval_meta.json"
 
 
-def compute_eval_hash(eval_cfg: EvalConfig, domain_prompts: dict[str, str]) -> str:
+def compute_eval_hash(eval_cfg: EvalConfig) -> str:
     """计算评测配置的 hash，用于检测配置变更。"""
     payload = {
         "model": eval_cfg.model.model_dump(),
         "prompt": eval_cfg.prompt,
         "dimensions": eval_cfg.dimensions,
-        "domain_prompts": domain_prompts,
         "sanitize": [r.model_dump() for r in eval_cfg.sanitize],
     }
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
@@ -44,7 +43,6 @@ def compute_eval_hash(eval_cfg: EvalConfig, domain_prompts: dict[str, str]) -> s
 async def run_evaluation(
     run_name: str,
     eval_cfg: EvalConfig,
-    domain_prompts: dict[str, str] | None = None,
     concurrency: int = 1,
     force: bool = False,
 ):
@@ -53,17 +51,13 @@ async def run_evaluation(
     Args:
         run_name: 实验 run 名称
         eval_cfg: 评测配置（从 eval.yaml 加载）
-        domain_prompts: 垂域评测标准
         concurrency: 并发评测数，默认 1（串行）
         force: 配置变更时是否强制重新评测
     """
-    domain_prompts = domain_prompts or {}
     judge_model_cfg = eval_cfg.model
     client = create_client(judge_model_cfg)
     compiled_sanitize = compile_rules(eval_cfg.sanitize)
 
-    if domain_prompts:
-        print(f"[info] domain prompts loaded: {list(domain_prompts.keys())}")
     if eval_cfg.sanitize:
         print(f"[info] sanitize rules loaded: {len(eval_cfg.sanitize)} rule(s)")
 
@@ -83,7 +77,7 @@ async def run_evaluation(
     eval_meta_path = result_dir / EVAL_META_FILE
 
     # 计算当前评测配置的 hash
-    current_hash = compute_eval_hash(eval_cfg, domain_prompts)
+    current_hash = compute_eval_hash(eval_cfg)
 
     # 检查已有评测结果和配置 hash
     existing_scores = load_scores(scores_path)
@@ -146,16 +140,9 @@ async def run_evaluation(
                 all_messages = rendered_request.get("messages", [])
                 sanitized_messages = sanitize_messages(all_messages, compiled_sanitize)
 
-                # 查找垂域评测标准（如有）
-                row_domain = r.get("domain")
-                domain_prompt = domain_prompts.get(row_domain) if row_domain else None
-                if row_domain and not domain_prompt and domain_prompts:
-                    tqdm.write(f"[warn] row {row_idx}: no domain prompt for '{row_domain}', using base prompt only")
-
                 messages = _build_judge_messages(
                     system_prompt, sanitized_messages, response_text,
                     language=r.get("language"), location=r.get("location"),
-                    domain=row_domain, domain_prompt=domain_prompt,
                 )
 
                 # 首样本调试输出（只 dump 第一条，避免刷屏）
@@ -226,7 +213,6 @@ async def run_evaluation(
     eval_meta = {
         "eval_config_hash": current_hash,
         "judge": eval_cfg.model_dump(),
-        "domain_prompts": domain_prompts,
     }
     eval_meta_path.write_text(
         json.dumps(eval_meta, ensure_ascii=False, indent=2),
@@ -273,24 +259,16 @@ def _sort_scores(scores_path: Path, existing_scores: dict):
 def _build_judge_messages(
     system_prompt: str, candidate_messages: list[dict], response: str,
     language: str | None = None, location: str | None = None,
-    domain: str | None = None, domain_prompt: str | None = None,
 ) -> list[dict]:
     """构建 judge API 调用的 messages。
 
     Args:
-        system_prompt: 完整的评分标准（来自 judge prompt 文件）
+        system_prompt: 完整的评分标准（来自 judge prompt 文件，已包含体裁清单）
         candidate_messages: 候选模型的完整 messages 列表（已脱敏，含 system）
         response: 模型回复
         language: 用户语言，用于评测本地化维度
         location: 用户位置，用于评测本地化维度
-        domain: 垂域分类（如 content_creation），标注在用户上下文中
-        domain_prompt: 垂域评测标准（来自 judge-domains/ 目录），追加到 system prompt
     """
-    # 如有垂域评测标准，追加到 system prompt 末尾
-    effective_system_prompt = system_prompt
-    if domain_prompt:
-        effective_system_prompt = system_prompt + "\n\n" + domain_prompt
-
     # 候选模型完整请求（脱敏后）以 JSON 形式注入，保留原始 role/content 结构
     messages_json = json.dumps(candidate_messages, ensure_ascii=False, indent=2)
     user_content = (
@@ -299,19 +277,17 @@ def _build_judge_messages(
         f"## 候选模型输出\n\n{response}"
     )
 
-    # 在待评测内容前添加用户上下文（语言、位置、垂域）
+    # 在待评测内容前添加用户上下文（语言、位置）
     context_parts = []
     if language:
         context_parts.append(f"语言：{language}")
     if location:
         context_parts.append(f"位置：{location}")
-    if domain:
-        context_parts.append(f"垂域分类：{domain}")
     if context_parts:
         user_content = "**用户上下文：**\n" + "\n".join(context_parts) + "\n\n" + user_content
 
     return [
-        {"role": "system", "content": effective_system_prompt},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
 

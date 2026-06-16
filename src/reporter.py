@@ -196,8 +196,8 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
         "timeliness": "实时性",
         "localization": "本地化",
         "search_planning": "搜索规划",
-        "search_results": "搜索结果",
-        "search_quality": "搜索质量",
+        "search_relevance": "搜索结果相关性",
+        "search_utilization": "搜索结果利用",
         "overall": "综合"
     }
     dim_name_reverse = {v: k for k, v in dim_name_map.items()}

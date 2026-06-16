@@ -71,7 +71,6 @@ def main():
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
     import_p.add_argument("--api-json-col", default="api_json", help="api_json 列名（默认 api_json）")
-    import_p.add_argument("--domain-col", default="domain", help="垂域分类列名（默认 domain，可选）")
 
     sub.add_parser("show", help="查看结果摘要").add_argument("run", help="run 名称（YAML key 或自动生成名）")
 
@@ -115,7 +114,6 @@ def main():
 
         asyncio.run(run_evaluation(
             run_name, eval_cfg,
-            domain_prompts=loader.domain_prompts,
             concurrency=args.concurrency,
             force=args.force,
         ))
@@ -137,7 +135,6 @@ def main():
             query_col=args.query_col,
             response_col=args.response_col,
             api_json_col=args.api_json_col,
-            domain_col=args.domain_col,
         )
     elif args.command == "show":
         _show_experiment(args.run)

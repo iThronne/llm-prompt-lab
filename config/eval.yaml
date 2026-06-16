@@ -10,7 +10,7 @@ model:
   extra_body:
     enable_search: true
 prompt: judge-prompt.md
-dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall" ]
+dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_relevance", "search_utilization", "overall" ]
 
 # 脱敏规则：在把候选模型完整 messages 传给 judge 之前，按以下正则替换敏感信息。
 # 留空 [] 表示不脱敏。修改规则会触发 eval_config_hash 变更，请用 --force 重评。
