@@ -20,6 +20,7 @@ from src.config import EvalConfig
 from src.constants import RESULTS_DIR
 from src.models import create_client, call_model, call_model_stream
 from src.reporter import load_responses, load_scores
+from src.sanitizer import compile_rules, sanitize_messages
 
 JUDGE_SEED = 7
 MAX_RETRIES = 3
@@ -34,6 +35,7 @@ def compute_eval_hash(eval_cfg: EvalConfig, domain_prompts: dict[str, str]) -> s
         "prompt": eval_cfg.prompt,
         "dimensions": eval_cfg.dimensions,
         "domain_prompts": domain_prompts,
+        "sanitize": [r.model_dump() for r in eval_cfg.sanitize],
     }
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
     return hashlib.md5(canonical.encode()).hexdigest()[:8]
@@ -58,9 +60,12 @@ async def run_evaluation(
     domain_prompts = domain_prompts or {}
     judge_model_cfg = eval_cfg.model
     client = create_client(judge_model_cfg)
+    compiled_sanitize = compile_rules(eval_cfg.sanitize)
 
     if domain_prompts:
         print(f"[info] domain prompts loaded: {list(domain_prompts.keys())}")
+    if eval_cfg.sanitize:
+        print(f"[info] sanitize rules loaded: {len(eval_cfg.sanitize)} rule(s)")
 
     responses_path = RESULTS_DIR / run_name / "responses.jsonl"
     if not responses_path.exists():
@@ -125,16 +130,21 @@ async def run_evaluation(
         if concurrency > 1:
             print(f"[info] 并发评测: concurrency={concurrency}")
 
+        # 首样本调试：把 judge 的完整入参 dump 到 results 目录，方便核对脱敏 / JSON 形态。
+        # 评测完一轮可手动删除该文件，或通过环境变量关闭。
+        sample_dumped = {"done": False}
+        sample_dump_path = result_dir / "_judge_input_sample.json"
+
         async def _evaluate_one(r: dict):
             """评测单条数据，带并发控制和重试。"""
             async with semaphore:
                 row_idx = r["row_index"]
                 response_text = _extract_response_text(r["response"])
 
-                # 从 rendered_request 提取非 system 消息
+                # 取 rendered_request 中的完整 messages（含 system）做脱敏后传给 judge
                 rendered_request = r.get("rendered_request", {})
                 all_messages = rendered_request.get("messages", [])
-                candidate_input = [m for m in all_messages if m.get("role") != "system"]
+                sanitized_messages = sanitize_messages(all_messages, compiled_sanitize)
 
                 # 查找垂域评测标准（如有）
                 row_domain = r.get("domain")
@@ -143,10 +153,32 @@ async def run_evaluation(
                     tqdm.write(f"[warn] row {row_idx}: no domain prompt for '{row_domain}', using base prompt only")
 
                 messages = _build_judge_messages(
-                    system_prompt, candidate_input, response_text,
+                    system_prompt, sanitized_messages, response_text,
                     language=r.get("language"), location=r.get("location"),
                     domain=row_domain, domain_prompt=domain_prompt,
                 )
+
+                # 首样本调试输出（只 dump 第一条，避免刷屏）
+                if not sample_dumped["done"]:
+                    async with write_lock:
+                        if not sample_dumped["done"]:
+                            sample_dumped["done"] = True
+                            try:
+                                sample_dump_path.write_text(
+                                    json.dumps(
+                                        {"row_index": row_idx, "judge_messages": messages},
+                                        ensure_ascii=False, indent=2,
+                                    ),
+                                    encoding="utf-8",
+                                )
+                                preview = messages[1]["content"]
+                                tqdm.write(
+                                    f"[debug] judge 入参样本已写入 {sample_dump_path}\n"
+                                    f"  row {row_idx} user content 前 500 字:\n"
+                                    f"  {preview[:500]}{'...' if len(preview) > 500 else ''}"
+                                )
+                            except Exception as e:
+                                tqdm.write(f"[warn] 首样本调试 dump 失败: {e}")
 
                 score_entry = None
                 # 通过 model_copy 注入 seed 参数（保证评测可复现）
@@ -239,7 +271,7 @@ def _sort_scores(scores_path: Path, existing_scores: dict):
 
 
 def _build_judge_messages(
-    system_prompt: str, candidate_input: list[dict], response: str,
+    system_prompt: str, candidate_messages: list[dict], response: str,
     language: str | None = None, location: str | None = None,
     domain: str | None = None, domain_prompt: str | None = None,
 ) -> list[dict]:
@@ -247,7 +279,7 @@ def _build_judge_messages(
 
     Args:
         system_prompt: 完整的评分标准（来自 judge prompt 文件）
-        candidate_input: 候选模型的完整输入消息（非 system 消息列表）
+        candidate_messages: 候选模型的完整 messages 列表（已脱敏，含 system）
         response: 模型回复
         language: 用户语言，用于评测本地化维度
         location: 用户位置，用于评测本地化维度
@@ -259,24 +291,13 @@ def _build_judge_messages(
     if domain_prompt:
         effective_system_prompt = system_prompt + "\n\n" + domain_prompt
 
-    # 格式化候选模型的输入过程
-    input_parts = []
-    for msg in candidate_input:
-        role = msg.get("role", "unknown")
-        if role == "user":
-            input_parts.append(f"**用户消息：**\n{msg.get('content', '')}")
-        elif role == "assistant" and msg.get("tool_calls"):
-            # 格式化工具调用信息
-            for tc in msg["tool_calls"]:
-                func = tc.get("function", {})
-                args = func.get("arguments", "")
-                input_parts.append(f"**模型工具调用：**\n函数: {func.get('name', '')}\n参数: {args}")
-        elif role == "tool":
-            input_parts.append(f"**搜索结果：**\n{msg.get('content', '')}")
-
-    input_text = "\n\n".join(input_parts) if input_parts else "（无输入记录）"
-
-    user_content = f"## 候选模型输入\n\n{input_text}\n\n## 候选模型输出\n\n{response}"
+    # 候选模型完整请求（脱敏后）以 JSON 形式注入，保留原始 role/content 结构
+    messages_json = json.dumps(candidate_messages, ensure_ascii=False, indent=2)
+    user_content = (
+        f"## 候选模型完整请求（已脱敏）\n\n"
+        f"```json\n{messages_json}\n```\n\n"
+        f"## 候选模型输出\n\n{response}"
+    )
 
     # 在待评测内容前添加用户上下文（语言、位置、垂域）
     context_parts = []

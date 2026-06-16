@@ -11,3 +11,36 @@ model:
     enable_search: true
 prompt: judge-prompt.md
 dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall" ]
+
+# 脱敏规则：在把候选模型完整 messages 传给 judge 之前，按以下正则替换敏感信息。
+# 留空 [] 表示不脱敏。修改规则会触发 eval_config_hash 变更，请用 --force 重评。
+# 注意：YAML 中正则用单引号包裹，避免 \b 等被解析为转义字符。
+sanitize:
+  # 手机号（中国大陆 11 位）
+  - pattern: '\b1[3-9]\d{9}\b'
+    replacement: '[PHONE]'
+  # 身份证号（18 位，末位可为 X）
+  - pattern: '\b\d{17}[\dXx]\b'
+    replacement: '[ID]'
+  # 邮箱
+  - pattern: '[\w.+-]+@[\w-]+\.[\w.-]+'
+    replacement: '[EMAIL]'
+  # 银行卡号（13-19 位连续数字，覆盖常见借记卡/信用卡长度）
+  - pattern: '\b\d{13,19}\b'
+    replacement: '[BANKCARD]'
+  # JWT（三段 base64url，以 eyJ 开头）
+  - pattern: '\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'
+    replacement: '[JWT]'
+  # IPv4
+  - pattern: '\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b'
+    replacement: '[IPV4]'
+  # IPv6（覆盖完整与压缩形式，宽松匹配）
+  - pattern: '\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b'
+    replacement: '[IPV6]'
+  # 常见 API key / Bearer token（OpenAI sk-、Anthropic sk-ant-、AWS AKIA 等）
+  - pattern: '\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}\b'
+    replacement: '[API_KEY]'
+  - pattern: '\bAKIA[0-9A-Z]{16}\b'
+    replacement: '[AWS_AK]'
+  - pattern: '(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b'
+    replacement: 'Bearer [TOKEN]'

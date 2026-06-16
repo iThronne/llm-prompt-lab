@@ -61,6 +61,13 @@ class PromptConfig(BaseModel):
     content: str
 
 
+class SanitizeRule(BaseModel):
+    """单条脱敏规则：用 pattern 正则匹配，替换为 replacement。"""
+
+    pattern: str
+    replacement: str = ""
+
+
 class EvalConfig(BaseModel):
     """评测配置（LLM-as-Judge），从 eval.yaml 加载。"""
 
@@ -68,6 +75,7 @@ class EvalConfig(BaseModel):
     prompt: str
     dimensions: list[str] = Field(
         default_factory=lambda: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_results", "search_quality", "overall"])
+    sanitize: list[SanitizeRule] = Field(default_factory=list)
 
 
 class ExperimentConfig(BaseModel):
