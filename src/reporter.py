@@ -341,18 +341,17 @@ def export_excel(run_name: str) -> Path:
         })
     df_responses = pd.DataFrame(rows_data)
 
-    # Scores 数据（如有）：按 row_index 合并进 Responses，便于在同一张表里筛选分析
-    if scores:
-        scores_data = []
-        for row_idx, score in sorted(scores.items()):
-            row = {"row_index": row_idx}
-            for k, v in score.items():
-                if k not in ("row_index", "query", "response_summary", "error"):
-                    row[k] = v
-            scores_data.append(row)
-        df_scores = pd.DataFrame(scores_data)
-        # 左连接：以 Responses 为主，评分列追加在右侧；query 列已在 Responses 中，不再重复
-        df_responses = df_responses.merge(df_scores, on="row_index", how="left")
+    # 评分数据按 row_index 合并进 Responses，便于在同一张表里筛选分析
+    scores_data = []
+    for row_idx, score in sorted(scores.items()):
+        row = {"row_index": row_idx}
+        for k, v in score.items():
+            if k not in ("row_index", "query", "response_summary", "error"):
+                row[k] = v
+        scores_data.append(row)
+    df_scores = pd.DataFrame(scores_data)
+    # 左连接：以 Responses 为主，评分列追加在右侧；query 列已在 Responses 中，不再重复
+    df_responses = df_responses.merge(df_scores, on="row_index", how="left")
 
     # 写入 Excel
     export_path = result_dir / f"{_short_report_name(run_name)}_report.xlsx"
