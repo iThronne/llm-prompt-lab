@@ -341,25 +341,24 @@ def export_excel(run_name: str) -> Path:
         })
     df_responses = pd.DataFrame(rows_data)
 
-    # Scores sheet（如有）
-    df_scores = None
+    # Scores 数据（如有）：按 row_index 合并进 Responses，便于在同一张表里筛选分析
     if scores:
         scores_data = []
         for row_idx, score in sorted(scores.items()):
-            row = {"row_index": row_idx, "query": score.get("query", "")}
+            row = {"row_index": row_idx}
             for k, v in score.items():
                 if k not in ("row_index", "query", "response_summary", "error"):
                     row[k] = v
             scores_data.append(row)
         df_scores = pd.DataFrame(scores_data)
+        # 左连接：以 Responses 为主，评分列追加在右侧；query 列已在 Responses 中，不再重复
+        df_responses = df_responses.merge(df_scores, on="row_index", how="left")
 
     # 写入 Excel
     export_path = result_dir / f"{_short_report_name(run_name)}_report.xlsx"
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
         df_summary.to_excel(writer, sheet_name="Summary", index=False)
         df_responses.to_excel(writer, sheet_name="Responses", index=False)
-        if df_scores is not None:
-            df_scores.to_excel(writer, sheet_name="Scores", index=False)
 
     return export_path
 

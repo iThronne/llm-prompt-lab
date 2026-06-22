@@ -468,8 +468,7 @@ python -m src.cli eval --force
 `eval` 命令完成后自动生成 Excel 文件（也可手动执行 `export` 命令），包含多个 sheet：
 
 - **Summary**：实验元信息 + 评分汇总
-- **Responses**：逐条响应数据（query、response、reasoning、token 用量、延迟等）
-- **Scores**：逐条评分数据（如有评测）
+- **Responses**：逐条响应数据 + 评分数据合并在一起，按 `row_index` 对齐（query、response、reasoning、token 用量、延迟等在前，各维度分数与分析追加在右），方便在同一张表里筛选排序
 
 ### 人工评估校准
 
