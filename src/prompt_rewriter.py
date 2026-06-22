@@ -14,7 +14,7 @@ from jinja2.exceptions import UndefinedError
 from jinja2.nodes import Name, Output, TemplateData
 
 
-def extract_context(A: str, rendered: str) -> dict[str, str]:
+def extract_context(source_template: str, rendered: str) -> dict[str, str]:
     """用 jinja2 AST 把 source_template 拆成 [字面量, 变量, ...]，转正则回填 rendered。
 
     Args:
