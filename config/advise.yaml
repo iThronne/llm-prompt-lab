@@ -1,0 +1,22 @@
+# 优化建议配置 — 读取 run 结果，由大模型给出 System Prompt 优化建议
+# 独立于 experiment.yaml / eval.yaml，advise 命令运行时实时加载，可随时修改后重新运行。
+
+model:
+  provider: ali
+  model: qwen3.7-max
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  api_key_env: ADVISE_OPENAI_API_KEY
+  temperature: 0.3          # 偏低，保证建议稳定可复现
+  max_tokens: 8192
+  extra_body:
+    enable_search: true
+
+prompt: advise-prompt.md
+
+# 低分样本选取策略：
+#   overall <= low_score_threshold 视为低分样本；
+#   低分样本不足 min_low_samples 时，按 overall 升序补足；
+#   喂给模型的总样本上限 max_samples（防止超上下文）。
+low_score_threshold: 3
+min_low_samples: 5
+max_samples: 20

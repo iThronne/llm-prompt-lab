@@ -36,9 +36,11 @@ llm-prompt-lab/
 ├── config/
 │   ├── experiment.yaml                    # 实验配置（profiles + dataset）
 │   ├── eval.yaml                          # 评测配置（judge 模型 + prompt + dimensions）
+│   ├── advise.yaml                        # 优化建议配置（建议模型 + prompt + 低分采样）
 │   └── prompts/                           # Prompt 模板文件
 │       ├── candidate-prompt.md            # 被测模型 system prompt
-│       └── judge-prompt.md                # Judge 评分标准
+│       ├── judge-prompt.md                # Judge 评分标准
+│       └── advise-prompt.md               # 建议模型 system prompt
 ├── data/                                  # 数据集目录（每个数据集一个子目录）
 │   └── example/                           # 一个数据集 = 一个包
 │       ├── example.xlsx                   # 数据集本体（与目录同名）
@@ -52,6 +54,7 @@ llm-prompt-lab/
 │   ├── constants.py                       # 共享常量（RESULTS_DIR 等）
 │   ├── dataset.py                         # Excel 读取 + messages 构建
 │   ├── prompt_rewriter.py                 # 从渲染串反推 context + jinja2 重渲染
+│   ├── advisor.py                         # 读取 run 结果，由模型给出 System Prompt 优化建议
 │   ├── evaluator.py                       # LLM-as-Judge 评测
 │   ├── experiment.py                      # 实验运行器（断点续跑）
 │   ├── importer.py                        # 从 Excel 导入现网数据
@@ -147,6 +150,29 @@ model:
 prompt: judge-prompt.md
 dimensions: ["relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_relevance", "search_utilization", "overall"]
 ```
+
+### 优化建议配置 (`config/advise.yaml`)
+
+独立于 `experiment.yaml` / `eval.yaml`，`advise` 命令运行时实时加载。配置建议模型及其 system prompt，以及低分样本的选取参数。
+
+```yaml
+model:
+  provider: ali
+  model: qwen3.7-max
+  base_url: https://...
+  api_key_env: ADVISE_OPENAI_API_KEY
+  temperature: 0.3          # 偏低，保证建议稳定可复现
+  max_tokens: 8192
+prompt: advise-prompt.md
+
+# 低分样本选取：overall <= low_score_threshold 视为低分；
+# 不足 min_low_samples 时按 overall 升序补足；总样本上限 max_samples。
+low_score_threshold: 3
+min_low_samples: 5
+max_samples: 20
+```
+
+`advise` 命令读取指定 run 的评测结果（`scores.jsonl` / `summary.json` / `meta.json` 中的当前 system prompt），选取低分样本，连同评分统计一起喂给建议模型，产出**诊断 + 修订版 system prompt + 修改理由**，写入 `results/<run>/advise.md`。当前优化范围仅限 System Prompt。
 
 ### 核心概念
 
@@ -324,6 +350,10 @@ python -m src.cli export <run_name>
 python -m src.cli calibrate
 python -m src.cli calibrate <run_name>
 
+# 读取 run 结果，由大模型给出 System Prompt 优化建议（须先 eval）
+python -m src.cli advise
+python -m src.cli advise <run_name>
+
 # 从 Excel 导入现网数据用于评测
 python -m src.cli import <excel> --name <run_name>
 python -m src.cli import data/prod.xlsx --name prod-20240530 \
@@ -340,10 +370,11 @@ python -m src.cli show <run_name>
 | `report` | 生成 HTML 可视化报告 |
 | `export` | 导出 Excel 文件 |
 | `calibrate` | 对比人工评分与 Judge 评分 |
+| `advise` | 读取 run 结果，由大模型给出 System Prompt 优化建议（从 advise.yaml 读取配置） |
 | `import` | 从 Excel 导入现网数据 |
 | `show` | 查看结果摘要 |
 
-`run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export`、`calibrate` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。
+`run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export`、`calibrate`、`advise` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。`advise` 要求该 run 已评测（存在 `scores.jsonl`）。
 
 ### 导入现网数据
 

@@ -97,15 +97,34 @@ python -m src.cli calibrate <run_name>
 
 `analysis_by_human.xlsx` 格式：包含 `row_index`、`query`、`analysis_by_human` 三列。运行 calibrate 后自动追加 Calibration 页到 report.xlsx。
 
+## 优化建议
+
+```bash
+# 读取最新已评测 run 的结果，由大模型给出 System Prompt 优化建议
+python -m src.cli advise
+
+# 指定 run
+python -m src.cli advise <run_name>
+```
+
+读取 run 的评测结果，抽取低分样本喂给大模型，输出 System Prompt 的优化建议。
+
+- 依赖评分结果：未评测的 run 会报错，请先运行 `eval`。
+- 配置文件：`config/advise.yaml`（模型、低分样本选取策略），修改后重新运行即生效，无需改 `experiment.yaml`。
+- API Key：通过环境变量 `ADVISE_OPENAI_API_KEY` 读取。
+- Prompt：`config/prompts/advise-prompt.md`。
+
 ## 典型工作流
 
 ```bash
-# 完整流程：运行 → 评测 → 报告 → 人工校准
+# 完整流程：运行 → 评测 → 报告 → 人工校准 → 优化建议
 python -m src.cli run --profile default
 python -m src.cli eval --concurrency 4
 python -m src.cli report --no-open
 # 人工评估后：在 run 目录下创建 analysis_by_human.xlsx，然后运行
 python -m src.cli calibrate
+# 让大模型基于评分给出 System Prompt 优化建议
+python -m src.cli advise
 
 # 对比两个 profile
 python -m src.cli run --profile default --name exp-default

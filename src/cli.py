@@ -8,6 +8,7 @@
   report <run>     生成 HTML 可视化报告
   export <run>     导出 Excel 文件
   calibrate [run]  对比人工评分与 Judge 评分，生成校准报告
+  advise [run]     读取 run 结果，由大模型给出 System Prompt 优化建议
 """
 
 import argparse
@@ -19,8 +20,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from src.advisor import run_advise
 from src.calibrate import generate_calibration_report
-from src.config import ExperimentConfigLoader, EvalConfigLoader
+from src.config import ExperimentConfigLoader, EvalConfigLoader, AdviseConfigLoader
 from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
@@ -83,6 +85,9 @@ def main():
 
     calibrate_p = sub.add_parser("calibrate", help="对比人工评分与 Judge 评分")
     calibrate_p.add_argument("run", nargs="?", help="run 名称（可选，默认最新）")
+
+    advise_p = sub.add_parser("advise", help="读取 run 结果，由大模型给出 System Prompt 优化建议")
+    advise_p.add_argument("run", nargs="?", help="run 名称（可选，默认最新已评测的 run）")
 
     args = parser.parse_args()
 
@@ -167,6 +172,28 @@ def main():
             print(f"[done] 校准报告已更新 → {path}")
         except FileNotFoundError as e:
             print(f"[error] {e}")
+
+    elif args.command == "advise":
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+        try:
+            loader = AdviseConfigLoader()
+            advise_cfg = loader.get_advise()
+        except (FileNotFoundError, ValueError) as e:
+            print(f"[error] {e}")
+            return
+        # 前置检查：advise 依赖评分，未评测的 run 无意义
+        if not (RESULTS_DIR / run_name / "scores.jsonl").exists():
+            print(f"[error] 该 run 尚未评测，请先运行：python -m src.cli eval {run_name}")
+            return
+        try:
+            path = asyncio.run(run_advise(run_name, advise_cfg))
+            print(f"[done] 优化建议已生成 → {path}")
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
+        except Exception as e:
+            print(f"[error] advise 失败: {e}")
 
 
 def _show_experiment(run_name: str):

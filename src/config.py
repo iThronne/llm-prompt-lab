@@ -80,6 +80,21 @@ class EvalConfig(BaseModel):
     sanitize: list[SanitizeRule] = Field(default_factory=list)
 
 
+class AdviseConfig(BaseModel):
+    """优化建议配置（读 run 结果 → 建议），从 advise.yaml 加载。
+
+    独立于 experiment.yaml / eval.yaml，advise 命令运行时实时加载。
+    """
+
+    model: ModelConfig
+    prompt: str  # 加载后由 Loader 替换为文件内容
+    # 低分样本选取：overall <= low_score_threshold 视为低分；
+    # 不足 min_low_samples 时按 overall 升序补足；总样本上限 max_samples。
+    low_score_threshold: int = 3
+    min_low_samples: int = 5
+    max_samples: int = 20
+
+
 class ExperimentConfig(BaseModel):
     candidate: ModelConfig
     prompt: str
@@ -275,3 +290,38 @@ class EvalConfigLoader:
 
     def get_eval(self) -> EvalConfig:
         return self.eval_config
+
+
+class AdviseConfigLoader:
+    """加载优化建议配置（advise.yaml + prompts）。
+
+    advise 命令使用。独立于 experiment.yaml / eval.yaml，运行时实时加载。
+    """
+
+    def __init__(self, config_dir: Optional[Path] = None):
+        base = config_dir or CONFIG_DIR
+        self.prompts = _load_prompts(base / "prompts")
+        self.advise_config = self._load_advise_config(base / "advise.yaml")
+
+    def _load_advise_config(self, path: Path) -> AdviseConfig:
+        """加载并解析 advise.yaml，将 prompt 文件名替换为内容。"""
+        if not path.exists():
+            raise FileNotFoundError(
+                f"优化建议配置文件不存在: {path}\n"
+                f"请创建 config/advise.yaml 来配置建议模型。"
+            )
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        advise_cfg = AdviseConfig(**data)
+
+        # 解析 prompt 文件名 → 内容
+        if advise_cfg.prompt not in self.prompts:
+            raise ValueError(
+                f"Advise prompt '{advise_cfg.prompt}' not found in config/prompts/. "
+                f"Available: {list(self.prompts.keys())}"
+            )
+        advise_cfg.prompt = self.prompts[advise_cfg.prompt].content
+        return advise_cfg
+
+    def get_advise(self) -> AdviseConfig:
+        return self.advise_config
