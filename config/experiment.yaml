@@ -2,7 +2,14 @@
 # profiles 节定义多个完整的候选模型配置，通过 --profile 选择。
 # 评测（judge）配置在 eval.yaml 中独立维护。
 
-dataset: data/example.xlsx
+dataset: example
+# dataset 字段是数据集"目录名"。约定结构：
+#   data/<dataset>/<dataset>.xlsx              数据集本体
+#   data/<dataset>/dataset-prompt-template.md  可选的 candidate prompt 模板（jinja2）
+#
+# 若 data/<dataset>/dataset-prompt-template.md 存在，框架会从每行 api_json[system] 反推
+# context，再用 config/prompts/<profile.prompt> 这份 jinja2 模板重新渲染。不存在则退回静态注入。
+# 想显式禁用此机制：在 profile 下加 `use_dataset_prompt_template: false`。
 
 # ── Profiles ────────────────────────────────────────────────────────
 # 每个 profile 包含完整的 candidate 配置和 prompt。

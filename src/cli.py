@@ -91,7 +91,7 @@ def main():
         exp = loader.get_experiment()
         run_name = args.name if args.name else ExperimentConfigLoader.generate_run_name(
             exp.candidate, exp.prompt_name, exp.prompt,
-            exp.dataset, ExperimentConfigLoader.hash_file(Path(exp.dataset)),
+            exp.dataset, ExperimentConfigLoader.hash_file(exp.dataset_path),
             profile_name=loader.profile_name,
         )
         asyncio.run(run_experiment(loader, run_name))

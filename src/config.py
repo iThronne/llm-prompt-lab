@@ -20,6 +20,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 CONFIG_DIR = Path("config")
+DATA_DIR = Path("data")
+DATASET_PROMPT_TEMPLATE_FILENAME = "dataset-prompt-template.md"
 
 
 class ModelConfig(BaseModel):
@@ -82,12 +84,26 @@ class ExperimentConfig(BaseModel):
     candidate: ModelConfig
     prompt: str
     prompt_name: str = ""
+    # 数据集目录名（位于 data/ 下）。约定结构：
+    #   data/<dataset>/<dataset>.xlsx              数据集本体
+    #   data/<dataset>/dataset-prompt-template.md  可选的 candidate prompt 模板（jinja2）
     dataset: str
-    # 数据集自带的 candidate prompt 模板（jinja2，即生产 api_json[system] 当初的渲染模板），
-    # 用于从 api_json[system] 反推 context。缺省时退回静态注入；
-    # 配置后 candidate-prompt.md 视为 jinja2 模板（实验侧候选模板）。
-    dataset_prompt_template: str = ""
-    dataset_prompt_template_name: str = ""
+    # 是否使用数据集自带的 prompt 模板做反推+重渲染。
+    # 默认 True：dataset-prompt-template.md 存在则启用；不存在则自动退回静态注入。
+    # 显式置 False 可强制走静态注入路径（即使文件存在）。
+    use_dataset_prompt_template: bool = True
+    # 加载后由 ExperimentConfigLoader 注入（用户不在 yaml 里写这两项）：
+    dataset_prompt_template: str = ""       # 模板内容
+    dataset_prompt_template_name: str = ""  # 模板文件名（用于 meta.json 追溯）
+
+    @property
+    def dataset_dir(self) -> Path:
+        return DATA_DIR / self.dataset
+
+    @property
+    def dataset_path(self) -> Path:
+        """约定数据集文件位于 data/<dataset>/<dataset>.xlsx。"""
+        return self.dataset_dir / f"{self.dataset}.xlsx"
 
 
 PROMPT_EXTENSIONS = {".md", ".txt"}
@@ -156,15 +172,23 @@ class ExperimentConfigLoader:
             )
         exp.prompt = self.prompts[exp.prompt].content
 
-        # dataset_prompt_template（可选）：同样从 prompts 目录加载
-        if exp.dataset_prompt_template:
-            exp.dataset_prompt_template_name = exp.dataset_prompt_template
-            if exp.dataset_prompt_template not in self.prompts:
-                raise ValueError(
-                    f"Dataset prompt template '{exp.dataset_prompt_template}' not found in config/prompts/. "
-                    f"Available: {list(self.prompts.keys())}"
-                )
-            exp.dataset_prompt_template = self.prompts[exp.dataset_prompt_template].content
+        # 检查 dataset 约定：目录必须存在，且目录下有与目录同名的 xlsx
+        if not exp.dataset_dir.exists():
+            raise FileNotFoundError(f"Dataset directory not found: {exp.dataset_dir}")
+        if not exp.dataset_path.exists():
+            raise FileNotFoundError(
+                f"Dataset file not found: {exp.dataset_path} "
+                f"(expected: data/<dataset>/<dataset>.xlsx)"
+            )
+
+        # 加载数据集自带的 prompt 模板（可选）：从 data/<dataset>/dataset-prompt-template.md
+        template_path = exp.dataset_dir / DATASET_PROMPT_TEMPLATE_FILENAME
+        if exp.use_dataset_prompt_template and template_path.exists():
+            exp.dataset_prompt_template = template_path.read_text(encoding="utf-8")
+            exp.dataset_prompt_template_name = DATASET_PROMPT_TEMPLATE_FILENAME
+        else:
+            exp.dataset_prompt_template = ""
+            exp.dataset_prompt_template_name = ""
 
         return exp
 

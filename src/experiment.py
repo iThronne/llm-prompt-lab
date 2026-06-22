@@ -59,9 +59,8 @@ def save_run_meta(
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 复制数据集（仅保留用到的列）
-    dataset_path = Path(experiment.dataset)
     all_cols = list(REQUIRED_COLUMNS) + list(OPTIONAL_COLUMNS)
-    saved_dataset = copy_dataset(experiment.dataset, result_dir, all_cols)
+    saved_dataset = copy_dataset(str(experiment.dataset_path), result_dir, all_cols)
 
     meta = {
         "run_name": run_name,
@@ -69,10 +68,12 @@ def save_run_meta(
         "candidate": experiment.candidate.model_dump(),
         "prompt_name": experiment.prompt_name,
         "prompt_content": experiment.prompt,
+        "dataset": experiment.dataset,
+        "dataset_path": str(saved_dataset),
+        "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset),
+        "use_dataset_prompt_template": experiment.use_dataset_prompt_template,
         "dataset_prompt_template_name": experiment.dataset_prompt_template_name,
         "dataset_prompt_template_content": experiment.dataset_prompt_template,
-        "dataset": str(saved_dataset),
-        "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset),
     }
     meta_path = result_dir / META_FILE
     meta_path.write_text(
@@ -141,7 +142,7 @@ async def run_experiment(config: ExperimentConfigLoader, run_name: str):
     save_run_meta(run_name, exp, profile_name=config.profile_name)
 
     client = create_client(model_cfg)
-    rows = load_dataset(exp.dataset)
+    rows = load_dataset(str(exp.dataset_path))
     total = len(rows)
 
     result_dir = RESULTS_DIR / run_name

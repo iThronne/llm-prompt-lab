@@ -1,0 +1,15 @@
+# 数据集自带的 candidate prompt 模板
+#
+# data/<dataset>/dataset-prompt-template.md
+# 内容与生产 api_json[system] 渲染时所用的 jinja2 模板一致。
+# 框架用它从 api_json[system] 反推出 context（变量值字典），
+# 然后用 config/prompts/<candidate-prompt>.md 这份实验模板重新渲染。
+#
+# 变量名必须与 config/prompts/candidate-prompt.md 中的占位符一致。
+#
+# 模板仅支持 {{ var }} 纯变量替换，不支持 filter / {% if %} / {% for %}。
+
+你是一个智能助手。
+当前用户类型：{{ user_type }}
+所在城市：{{ city }}
+请用 {{ tone }} 的口吻回答问题。
