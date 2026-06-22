@@ -83,6 +83,11 @@ class ExperimentConfig(BaseModel):
     prompt: str
     prompt_name: str = ""
     dataset: str
+    # 数据集自带的 candidate prompt 模板（jinja2，即生产 api_json[system] 当初的渲染模板），
+    # 用于从 api_json[system] 反推 context。缺省时退回静态注入；
+    # 配置后 candidate-prompt.md 视为 jinja2 模板（实验侧候选模板）。
+    dataset_prompt_template: str = ""
+    dataset_prompt_template_name: str = ""
 
 
 PROMPT_EXTENSIONS = {".md", ".txt"}
@@ -150,6 +155,17 @@ class ExperimentConfigLoader:
                 f"Available: {list(self.prompts.keys())}"
             )
         exp.prompt = self.prompts[exp.prompt].content
+
+        # dataset_prompt_template（可选）：同样从 prompts 目录加载
+        if exp.dataset_prompt_template:
+            exp.dataset_prompt_template_name = exp.dataset_prompt_template
+            if exp.dataset_prompt_template not in self.prompts:
+                raise ValueError(
+                    f"Dataset prompt template '{exp.dataset_prompt_template}' not found in config/prompts/. "
+                    f"Available: {list(self.prompts.keys())}"
+                )
+            exp.dataset_prompt_template = self.prompts[exp.dataset_prompt_template].content
+
         return exp
 
     def get_prompt(self, name: str) -> PromptConfig:

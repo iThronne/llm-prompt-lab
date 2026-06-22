@@ -19,9 +19,30 @@ from src.config import ExperimentConfigLoader, ExperimentConfig
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import load_dataset, build_messages, copy_dataset, REQUIRED_COLUMNS, OPTIONAL_COLUMNS
 from src.models import create_client, call_model, call_model_stream
+from src.prompt_rewriter import extract_context, render_with_context
 
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
+
+
+def _extract_system_content(api_json_str: str) -> str:
+    """从 api_json 中取出首个 role=='system' 消息的 content。
+
+    用于反推路径：把生产环境渲染好的 system prompt 当作 jinja2 模板的"渲染输出"，
+    供 prompt_rewriter.extract_context 回填 context。
+    api_json 中无 system 消息时抛 KeyError。
+    """
+    parsed = json.loads(api_json_str)
+    if isinstance(parsed, dict) and "messages" in parsed:
+        messages = parsed["messages"]
+    elif isinstance(parsed, list):
+        messages = parsed
+    else:
+        raise KeyError("api_json 既不是 messages 数组也不含 messages 键")
+    for msg in messages:
+        if msg.get("role") == "system":
+            return msg.get("content", "")
+    raise KeyError("api_json 中未找到 role=='system' 的消息")
 
 
 def save_run_meta(
@@ -48,6 +69,8 @@ def save_run_meta(
         "candidate": experiment.candidate.model_dump(),
         "prompt_name": experiment.prompt_name,
         "prompt_content": experiment.prompt,
+        "dataset_prompt_template_name": experiment.dataset_prompt_template_name,
+        "dataset_prompt_template_content": experiment.dataset_prompt_template,
         "dataset": str(saved_dataset),
         "dataset_content_hash": ExperimentConfigLoader.hash_file(saved_dataset),
     }
@@ -136,8 +159,22 @@ async def run_experiment(config: ExperimentConfigLoader, run_name: str):
         if checkpoint.is_done(idx):
             continue
 
-        # 构建带 locale 的 system prompt（逐行注入语言和位置信息）
-        system_prompt = exp.prompt
+        # 构建 system prompt
+        # - 若配置了 dataset_prompt_template：从 api_json[system] 反推 context，渲染候选模板
+        # - 否则：candidate-prompt.md 当纯文本整段注入（兼容旧行为）
+        system_prompt_template = exp.prompt
+        if exp.dataset_prompt_template:
+            try:
+                original_system = _extract_system_content(row["api_json"])
+                ctx = extract_context(exp.dataset_prompt_template, original_system)
+                system_prompt = render_with_context(system_prompt_template, ctx)
+            except (ValueError, NotImplementedError, KeyError, json.JSONDecodeError) as e:
+                tqdm.write(f"[warn] row {idx}: context 反推失败 ({e})，降级为模板原文")
+                system_prompt = system_prompt_template
+        else:
+            system_prompt = system_prompt_template
+
+        # locale 后缀（逐行注入语言和位置信息）
         locale_parts = []
         if row.get("language"):
             locale_parts.append(f"语言：{row['language']}")

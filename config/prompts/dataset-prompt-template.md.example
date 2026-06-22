@@ -1,0 +1,22 @@
+# 这是一份**示例**，演示 dataset_prompt_template 与 candidate-prompt（jinja2 模板）的搭配。
+#
+# 概念：
+# - dataset_prompt_template 是 dataset 中 api_json[system].content 当初被渲染时所用的那份 jinja2 模板。
+#   把它喂给框架后，每条样本的 system 串能被反推出 context（变量值字典）。
+# - candidate-prompt.md 是实验侧的候选模板，变量名与上面那份一致；每行用反推出的 context 重新渲染，
+#   从而保留真实样本上下文、仅替换 prompt 主体。
+#
+# 真正使用时请：
+# 1. 把生产环境的"原 prompt 模板"内容复制到 config/prompts/dataset-prompt-template.md
+# 2. 把实验候选模板写到 config/prompts/candidate-prompt.md（变量名必须与上面那份一致）
+# 3. 在 config/experiment.yaml 的 profile 下加 `dataset_prompt_template: dataset-prompt-template.md`
+
+# ── 示例：dataset-prompt-template.md（数据集自带的模板）
+你是一个智能助手。
+当前用户类型：{{ user_type }}
+所在城市：{{ city }}
+请用 {{ tone }} 的口吻回答问题。
+
+# ── 示例：candidate-prompt.md（实验候选模板，变量名与上面完全一致）
+你扮演一名{{ tone }}的 AI 助手，正在为身份为「{{ user_type }}」、所在「{{ city }}」的用户服务。
+回答应当兼顾准确性与友好度，避免冗长。
