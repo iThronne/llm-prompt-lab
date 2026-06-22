@@ -39,7 +39,10 @@ llm-prompt-lab/
 │   └── prompts/                           # Prompt 模板文件
 │       ├── candidate-prompt.md            # 被测模型 system prompt
 │       └── judge-prompt.md                # Judge 评分标准
-├── data/                                  # 数据集（Excel）
+├── data/                                  # 数据集目录（每个数据集一个子目录）
+│   └── example/                           # 一个数据集 = 一个包
+│       ├── example.xlsx                   # 数据集本体（与目录同名）
+│       └── dataset-prompt-template.md     # 可选：生产模板，用于反推 context
 ├── raw_data/                              # 原始日志数据
 ├── scripts/
 │   └── import_summarybox.py               # Summarybox 日志导入工具
@@ -47,7 +50,8 @@ llm-prompt-lab/
 │   ├── cli.py                             # CLI 入口
 │   ├── config.py                          # Pydantic 配置加载与校验
 │   ├── constants.py                       # 共享常量（RESULTS_DIR 等）
-│   ├── dataset.py                         # Excel 读取 + Jinja2 模板替换
+│   ├── dataset.py                         # Excel 读取 + messages 构建
+│   ├── prompt_rewriter.py                 # 从渲染串反推 context + jinja2 重渲染
 │   ├── evaluator.py                       # LLM-as-Judge 评测
 │   ├── experiment.py                      # 实验运行器（断点续跑）
 │   ├── importer.py                        # 从 Excel 导入现网数据
@@ -75,7 +79,10 @@ llm-prompt-lab/
 
 ```yaml
 # ── 共享配置 ──────────────────────────────────────────────────────
-dataset: data/example.xlsx
+# dataset 是数据集"目录名"。约定结构：
+#   data/<dataset>/<dataset>.xlsx              数据集本体
+#   data/<dataset>/dataset-prompt-template.md  可选 candidate prompt 模板（jinja2）
+dataset: example
 
 # ── Profiles ─────────────────────────────────────────────────────
 profiles:
@@ -207,49 +214,88 @@ candidate:
   temperature: 0.7
   max_tokens: 1024
 prompt: candidate-prompt.md
-dataset: data/example.xlsx
+dataset: example
 ```
 
 ### Prompt 模板 (`config/prompts/`)
 
 Prompt 以文件形式存放，支持 `.md` 和 `.txt` 扩展名。配置中的 `prompt` 字段必须写完整文件名（含扩展名），否则报错。
 
-数据集的 `api_json` 字段中使用 Jinja2 占位符引用 prompt：
+`prompt` 字段指向的文件即 candidate 的 system prompt。两种使用方式：
 
-- `{{ system_prompt }}` -- 自动注入 `prompt` 字段指向的文件内容
-- `{{ query }}` -- 自动注入当前数据行的用户问题
+- **静态注入**（默认）：文件内容整段当作 system message 注入到每行样本，覆盖 `api_json[system].content`。
+- **反推 + 重渲染**（启用 `dataset-prompt-template.md` 时）：文件视为 jinja2 模板，框架从每行 `api_json[system]` 反推出 context 并逐行渲染。详见下文 [数据集自带 prompt 模板](#数据集自带-prompt-模板)。
 
 ## 数据集格式
 
-Excel 文件需包含以下两列：
+每个数据集是 `data/` 下的一个**目录**，约定结构：
+
+```
+data/<dataset>/
+├── <dataset>.xlsx                  # 数据集本体（与目录同名）
+└── dataset-prompt-template.md      # 可选：候选 prompt 模板，启用反推+重渲染
+```
+
+`experiment.yaml` 的 `dataset` 字段写**目录名**（如 `dataset: example`），框架按约定派生出 xlsx 与 template 路径。
+
+### Excel 列约定
+
+必选列：
 
 | 列名 | 说明 |
 |------|------|
 | `query` | 用户问题文本 |
-| `api_json` | 完整的 API 请求 JSON 字符串，支持 Jinja2 占位符 |
+| `api_json` | 完整的 messages JSON 字符串（生产环境真实请求体），形如 `{"messages": [{"role":"system","content":"..."}, {"role":"user","content":"..."}]}` 或裸 messages 数组 |
+
+运行时框架解析 `api_json` 取 messages，把 system 消息的 `content` 替换为当前 profile 的 candidate prompt（静态注入或反推渲染后的结果），其余消息（user / assistant / 多轮历史）保持原样发送给模型。
 
 可选列：
 
 | 列名 | 说明 |
 |------|------|
-| `language` | 用户语言（如 `zh-CN`），用于本地化评测 |
-| `location` | 用户位置（如 `China`），用于本地化评测 |
+| `language` | 用户语言（如 `zh-CN`），自动追加到 system prompt 末尾，用于本地化评测 |
+| `location` | 用户位置（如 `China`），自动追加到 system prompt 末尾，用于本地化评测 |
 
-`api_json` 示例：
-
-```json
-{"messages": [{"role": "system", "content": "{{system_prompt}}"}, {"role": "user", "content": "{{query}}"}]}
-```
-
-运行时框架自动将 `{{system_prompt}}` 和 `{{query}}` 替换为实际值，与 `candidate` 的 `call_params` 合并后发送请求。
-
-如果提供了 `language` 和 `location` 列，框架会自动将其注入到 `system_prompt` 末尾：
+提供 `language` 和 `location` 时，会在 system prompt 末尾自动追加：
 
 ```
 当前用户信息：
 语言：zh-CN
 位置：China
 ```
+
+### 数据集自带 prompt 模板
+
+如果数据集的 `api_json[system].content` 是由生产环境的某份 jinja2 模板渲染而成的，你可以把那份模板放在数据集目录下命名为 `dataset-prompt-template.md`，框架会自动启用 **反推 + 重渲染** 路径：
+
+1. 用 jinja2 AST 把 `dataset-prompt-template.md` 拆成 `[字面量, 变量, ...]`，转成正则匹配每行的 `api_json[system].content`，反推出 context 字典
+2. 把 `prompt` 字段指向的文件（如 `candidate-prompt.md`）当作**实验侧 jinja2 模板**，用上一步反推的 context 渲染出当前行的 system prompt
+
+这样可以在保留每条样本真实上下文（用户类型、城市、tone 等）的前提下，仅替换 prompt 主体做对照实验。
+
+**约束**：两份模板都只能含 `{{ var }}` 纯变量替换，不支持 filter / `{% if %}` / `{% for %}`。两边变量名必须**完全一致**。
+
+**示例**：
+
+```jinja2
+{# data/example/dataset-prompt-template.md（与生产渲染时所用模板一致）#}
+你是一个智能助手。
+当前用户类型：{{ user_type }}
+所在城市：{{ city }}
+请用 {{ tone }} 的口吻回答问题。
+```
+
+```jinja2
+{# config/prompts/candidate-prompt.md（实验候选模板，变量名一致）#}
+你扮演一名{{ tone }}的 AI 助手，正在为身份为「{{ user_type }}」、所在「{{ city }}」的用户服务。
+回答应当兼顾准确性与友好度，避免冗长。
+```
+
+**控制开关**：
+- 默认 `use_dataset_prompt_template: true`，存在 `dataset-prompt-template.md` 就启用，不存在则退回静态注入
+- 在 profile 下加 `use_dataset_prompt_template: false` 可强制禁用（即使文件存在）
+
+**失败处理**：某行反推失败（模板与渲染串不匹配 / 含不支持节点 / 候选模板含 context 没有的变量）时，会 `tqdm.write` 一条 warn 并降级为模板原文，实验继续跑完，不会因个别行挂掉整批。
 
 ## CLI 命令
 
