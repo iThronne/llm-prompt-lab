@@ -8,6 +8,7 @@
 """
 
 import json
+import re
 from pathlib import Path
 
 from src.config import AdviseConfig
@@ -19,6 +20,40 @@ from src.reporter import (
     load_responses,
     load_scores,
 )
+
+
+_VAR_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+
+
+def _extract_template_vars(template: str) -> list[str]:
+    """从模板中提取 {{ var }} 变量名（保持出现顺序，去重）。"""
+    seen: list[str] = []
+    for m in _VAR_PATTERN.finditer(template or ""):
+        name = m.group(1)
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def _extract_rendered_system(rendered_request: dict | None) -> str:
+    """从 responses.jsonl 的 rendered_request 中取实际发给模型的 system content。
+
+    rendered_request 即 experiment 阶段记录的"发给候选模型的完整请求体"，
+    其中 messages 数组里 role=='system' 那条的 content 即模板渲染后（含 locale 后缀）
+    的真实 system prompt——无需反推、无需重渲染。
+
+    Returns:
+        rendered system content；若结构异常或未找到 system 消息，返回 ""。
+    """
+    if not isinstance(rendered_request, dict):
+        return ""
+    messages = rendered_request.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            return msg.get("content", "") or ""
+    return ""
 
 
 def _select_low_score_samples(
@@ -34,8 +69,9 @@ def _select_low_score_samples(
     - 总数上限 max_samples 截断
 
     Returns:
-        list[dict]，每条含 row_index / query / response / scores(各维度) / analysis，
-        按 overall 升序排列（最低分在前）。
+        list[dict]，每条含 row_index / query / response / scores(各维度) / analysis /
+        rendered_system（该行实验时实际发给候选模型的 system content，
+        从 responses.jsonl 的 rendered_request 提取），按 overall 升序排列（最低分在前）。
     """
     # 过滤掉无 overall 分或无对应 response 的行
     candidates = []
@@ -57,6 +93,7 @@ def _select_low_score_samples(
                 if k not in ("row_index", "query", "response_summary", "error", "analysis")
             },
             "analysis": score.get("analysis", ""),
+            "rendered_system": _extract_rendered_system(r.get("rendered_request")),
         })
 
     # 按 overall 升序
@@ -101,10 +138,26 @@ def _build_advise_user_content(
     dimensions: list[str],
     samples: list[dict],
 ) -> str:
-    """构造建议模型的 user 消息（markdown）。"""
+    """构造建议模型的 user 消息（markdown）。
+
+    若 current_prompt 含 {{ var }}，会在顶部标注变量清单并要求保留；
+    每条低分样本附"实际注入的 System Prompt"（直接取自 rendered_request）。
+    """
     parts: list[str] = []
 
+    template_vars = _extract_template_vars(current_prompt)
+
     parts.append("## 当前 System Prompt\n")
+    if template_vars:
+        var_list = ", ".join(f"`{{{{ {v} }}}}`" for v in template_vars)
+        parts.append(
+            "> 注意：这是一个 **Jinja2 模板**，下列变量由框架在运行时按行注入，"
+            "注入内容可能是简短字符串，也可能是另一段动态 prompt：\n>\n"
+            f"> {var_list}\n>\n"
+            "> 修订版必须**原样保留**这些变量名（不要改名、删除，也不要换成自然语言描述），"
+            "否则下次实验渲染会失败。下方每条低分样本附有该行变量实际填充后的 system prompt，"
+            "请据此判断短板。\n"
+        )
     parts.append("```")
     parts.append(current_prompt or "（无 system prompt，meta.json 缺失 prompt_content）")
     parts.append("```\n")
@@ -116,6 +169,17 @@ def _build_advise_user_content(
     parts.append(f"## 低分样本（共 {len(samples)} 条）\n")
     for i, s in enumerate(samples, 1):
         parts.append(f"### 样本 {i}（row_index={s['row_index']}，overall={s['overall']}）")
+
+        # 实际注入的 system prompt：直接来自 responses.jsonl 的 rendered_request
+        rendered = s.get("rendered_system", "")
+        if rendered:
+            parts.append("- 实际注入的 System Prompt：\n")
+            parts.append("```text")
+            parts.append(rendered)
+            parts.append("```")
+        else:
+            parts.append("- ⚠️ 该行 responses.jsonl 中未找到 rendered_request 的 system 消息，跳过实际 prompt 展示")
+
         parts.append(f"- query：{s['query']}")
         score_line = ", ".join(f"{k}={v}" for k, v in s["scores"].items())
         parts.append(f"- 各维度分数：{score_line}")
@@ -161,11 +225,14 @@ async def run_advise(run_name: str, advise_cfg: AdviseConfig) -> Path:
     meta = load_run_meta(run_name)
     current_prompt = meta.get("prompt_content", "")
 
-    # 2. 选低分样本
+    # 2. 选低分样本（每行实际注入的 system prompt 直接取自 responses.jsonl 的 rendered_request，
+    #    不再读 dataset xlsx，保证 eval 之后的所有操作只在 results/<run>/ 内闭环）
     samples = _select_low_score_samples(responses, scores, advise_cfg)
 
     # 3. 构造 messages
-    user_content = _build_advise_user_content(current_prompt, summary, dimensions, samples)
+    user_content = _build_advise_user_content(
+        current_prompt, summary, dimensions, samples,
+    )
     messages = [
         {"role": "system", "content": advise_cfg.prompt},
         {"role": "user", "content": user_content},
