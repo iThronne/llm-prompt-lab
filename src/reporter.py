@@ -16,6 +16,30 @@ from jinja2 import Environment, PackageLoader
 
 from src.constants import RESULTS_DIR
 
+# Excel 单元格硬上限：32767 字符。超长字段写入前截断并标注，
+# 完整数据仍保留在 responses.jsonl，Excel 仅供人工查看。
+EXCEL_CELL_MAX = 32767
+
+
+def _cap_cell(value, max_len: int = EXCEL_CELL_MAX):
+    """截断超长字符串以适应 Excel 单元格上限，并加 [TRUNCATED] 标注。
+
+    None 与非字符串原值（数值等）原样返回，避免影响数值列类型。
+    """
+    if value is None or not isinstance(value, str):
+        return value
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - len("\n[TRUNCATED]")] + "\n[TRUNCATED]"
+
+
+def _cap_long_text_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """对所有字符串（object）列做 Excel 单元格长度兜底，数值列不受影响。"""
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].map(_cap_cell)
+    return df
+
 
 def load_responses(path: Path) -> list[dict]:
     """从 responses.jsonl 加载结果，按 row_index 去重（保留最后一条）。"""
@@ -352,6 +376,8 @@ def export_excel(run_name: str) -> Path:
     df_scores = pd.DataFrame(scores_data)
     # 左连接：以 Responses 为主，评分列追加在右侧；query 列已在 Responses 中，不再重复
     df_responses = df_responses.merge(df_scores, on="row_index", how="left")
+    # 超长文本列兜底（analysis、response 等可能超过 Excel 单元格上限）
+    df_responses = _cap_long_text_columns(df_responses)
 
     # 写入 Excel
     export_path = result_dir / f"{_short_report_name(run_name)}_report.xlsx"
@@ -406,6 +432,8 @@ def export_responses(run_name: str) -> Path:
             "finish_reason": response.get("choices", [{}])[0].get("finish_reason"),
         })
     df_responses = pd.DataFrame(rows_data)
+    # 超长文本列兜底（response、reasoning_content、search_results 等可能超过 Excel 单元格上限）
+    df_responses = _cap_long_text_columns(df_responses)
 
     export_path = result_dir / "responses.xlsx"
     with pd.ExcelWriter(export_path, engine="openpyxl") as writer:

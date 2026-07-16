@@ -26,7 +26,7 @@ from src.config import ExperimentConfigLoader, EvalConfigLoader, AdviseConfigLoa
 from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
-from src.importer import import_excel
+from src.importer import import_data
 from src.reporter import generate_html_report, export_excel, export_responses
 
 
@@ -67,8 +67,8 @@ def main():
     eval_p.add_argument("--concurrency", "-c", type=int, default=1, help="并发评测数（默认 1，即串行）")
     eval_p.add_argument("--force", action="store_true", help="评测配置变更时强制重新评测（清空旧结果）")
 
-    import_p = sub.add_parser("import", help="从 Excel 导入已有数据（用于评测现网数据）")
-    import_p.add_argument("excel", help="Excel 文件路径")
+    import_p = sub.add_parser("import", help="从 Excel/JSONL 导入已有数据（用于评测现网数据）")
+    import_p.add_argument("data", help="数据文件路径（.xlsx/.jsonl/.csv）")
     import_p.add_argument("--name", required=True, help="生成的 run 名称")
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
@@ -134,8 +134,8 @@ def main():
         except Exception as e:
             print(f"[warn] Excel 导出失败: {e}")
     elif args.command == "import":
-        import_excel(
-            excel_path=args.excel,
+        import_data(
+            data_path=args.data,
             run_name=args.name,
             query_col=args.query_col,
             response_col=args.response_col,

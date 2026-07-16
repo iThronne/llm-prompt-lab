@@ -43,7 +43,7 @@ llm-prompt-lab/
 │       └── advise-prompt.md               # 建议模型 system prompt
 ├── data/                                  # 数据集目录（每个数据集一个子目录）
 │   └── example/                           # 一个数据集 = 一个包
-│       ├── example.xlsx                   # 数据集本体（与目录同名）
+│       ├── example.jsonl|.xlsx            # 数据集本体（与目录同名；.jsonl 优先）
 │       └── dataset-prompt-template.md     # 可选：生产模板，用于反推 context
 ├── raw_data/                              # 原始日志数据
 ├── scripts/
@@ -52,12 +52,12 @@ llm-prompt-lab/
 │   ├── cli.py                             # CLI 入口
 │   ├── config.py                          # Pydantic 配置加载与校验
 │   ├── constants.py                       # 共享常量（RESULTS_DIR 等）
-│   ├── dataset.py                         # Excel 读取 + messages 构建
+│   ├── dataset.py                         # Excel/JSONL 读取 + messages 构建
 │   ├── prompt_rewriter.py                 # 从渲染串反推 context + jinja2 重渲染
 │   ├── advisor.py                         # 读取 run 结果，由模型给出 System Prompt 优化建议
 │   ├── evaluator.py                       # LLM-as-Judge 评测
 │   ├── experiment.py                      # 实验运行器（断点续跑）
-│   ├── importer.py                        # 从 Excel 导入现网数据
+│   ├── importer.py                        # 从 Excel/JSONL 导入现网数据
 │   ├── models.py                          # OpenAI 兼容接口客户端
 │   ├── reporter.py                        # HTML 报告生成与 Excel 导出
 │   └── templates/                         # HTML 模板
@@ -83,7 +83,7 @@ llm-prompt-lab/
 ```yaml
 # ── 共享配置 ──────────────────────────────────────────────────────
 # dataset 是数据集"目录名"。约定结构：
-#   data/<dataset>/<dataset>.xlsx              数据集本体
+#   data/<dataset>/<dataset>.jsonl|.xlsx       数据集本体（.jsonl 优先，无长度上限）
 #   data/<dataset>/dataset-prompt-template.md  可选 candidate prompt 模板（jinja2）
 dataset: example
 
@@ -258,22 +258,24 @@ Prompt 以文件形式存放，支持 `.md` 和 `.txt` 扩展名。配置中的 
 
 ```
 data/<dataset>/
-├── <dataset>.xlsx                  # 数据集本体（与目录同名）
+├── <dataset>.jsonl|.xlsx           # 数据集本体（与目录同名；.jsonl 优先）
 └── dataset-prompt-template.md      # 可选：候选 prompt 模板，启用反推+重渲染
 ```
 
-`experiment.yaml` 的 `dataset` 字段写**目录名**（如 `dataset: example`），框架按约定派生出 xlsx 与 template 路径。
+`experiment.yaml` 的 `dataset` 字段写**目录名**（如 `dataset: example`），框架按约定派生出数据集文件与 template 路径。数据集文件支持 `.jsonl`（每行一条 JSON 记录，字段无长度上限，**推荐用于超长 `api_json`**）与 `.xlsx`（Excel 单元格上限 32767 字符）；两者都存在时优先 `.jsonl`。
 
-### Excel 列约定
+### 列约定
 
 必选列：
 
 | 列名 | 说明 |
 |------|------|
 | `query` | 用户问题文本 |
-| `api_json` | 完整的 messages JSON 字符串（生产环境真实请求体），形如 `{"messages": [{"role":"system","content":"..."}, {"role":"user","content":"..."}]}` 或裸 messages 数组 |
+| `api_json` | 完整的 messages（生产环境真实请求体），形如 `{"messages": [{"role":"system","content":"..."}, {"role":"user","content":"..."}]}` 或裸 messages 数组。**Excel 中须为 JSON 字符串**；**JSONL 中可为 JSON 字符串或直接写对象/数组**（框架自动归一化） |
 
 运行时框架解析 `api_json` 取 messages，把 system 消息的 `content` 替换为当前 profile 的 candidate prompt（静态注入或反推渲染后的结果），其余消息（user / assistant / 多轮历史）保持原样发送给模型。
+
+> **超长 api_json**：生产数据 `api_json`（含多轮历史、搜索结果等）可能超过 Excel 单元格 32767 字符上限。改用 `.jsonl` 数据集即可完整承载，不受限制。`export` 导出 Excel 时，超长文本字段（response、reasoning、search_results 等）会自动截断并标注 `[TRUNCATED]`，完整数据仍保留在 `responses.jsonl`。
 
 可选列：
 
@@ -354,10 +356,12 @@ python -m src.cli calibrate <run_name>
 python -m src.cli advise
 python -m src.cli advise <run_name>
 
-# 从 Excel 导入现网数据用于评测
-python -m src.cli import <excel> --name <run_name>
+# 从 Excel/JSONL 导入现网数据用于评测
+python -m src.cli import <data> --name <run_name>
 python -m src.cli import data/prod.xlsx --name prod-20240530 \
     --query-col "用户问题" --response-col "模型回答"
+# 超长 api_json 用 JSONL 导入（不受 Excel 32767 限制）
+python -m src.cli import data/prod.jsonl --name prod-20240530
 
 # 查看实验结果摘要
 python -m src.cli show <run_name>
@@ -371,24 +375,26 @@ python -m src.cli show <run_name>
 | `export` | 导出 Excel 文件 |
 | `calibrate` | 对比人工评分与 Judge 评分 |
 | `advise` | 读取 run 结果，由大模型给出 System Prompt 优化建议（从 advise.yaml 读取配置） |
-| `import` | 从 Excel 导入现网数据 |
+| `import` | 从 Excel/JSONL 导入现网数据 |
 | `show` | 查看结果摘要 |
 
 `run` 支持 `--profile` / `-p` 参数选择 profile。`eval` 支持 `--force` 参数强制覆盖已有评测结果。`eval`、`report`、`export`、`calibrate`、`advise` 和 `show` 支持省略 `run_name`，自动使用最新实验（按文件夹修改时间排序）。`advise` 要求该 run 已评测（存在 `scores.jsonl`）。
 
 ### 导入现网数据
 
-如果已有现网数据（Excel 格式，含 Query 和模型回答），可直接导入评测，无需重新调用模型 API：
+如果已有现网数据（Excel 或 JSONL 格式，含 Query 和模型回答），可直接导入评测，无需重新调用模型 API：
 
 ```bash
-# 导入（Excel 需包含 query 和 response 列）
+# 导入（数据文件需包含 query 和 response 列）
 python -m src.cli import data/production.xlsx --name prod-eval
+# 或 JSONL（api_json 超长时推荐，不受 Excel 32767 字符限制）
+python -m src.cli import data/production.jsonl --name prod-eval
 
 # 评测导入的数据
 python -m src.cli eval prod-eval
 ```
 
-导入命令在 `results/<run_name>/` 下生成 `responses.jsonl` 和 `meta.json`（标记 `"source": "imported"`），之后可像正常实验一样评测。
+导入命令在 `results/<run_name>/` 下生成 `responses.jsonl` 和 `meta.json`（标记 `"source": "imported"`），之后可像正常实验一样评测。`api_json` 在 JSONL 中可写成 JSON 字符串或直接对象/数组，框架自动归一化。
 
 ### 从 Summarybox 日志导入
 

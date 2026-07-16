@@ -100,7 +100,7 @@ class ExperimentConfig(BaseModel):
     prompt: str
     prompt_name: str = ""
     # 数据集目录名（位于 data/ 下）。约定结构：
-    #   data/<dataset>/<dataset>.xlsx              数据集本体
+    #   data/<dataset>/<dataset>.jsonl|.csv|.xlsx   数据集本体（.jsonl/.csv 优先，无长度上限）
     #   data/<dataset>/dataset-prompt-template.md  可选的 candidate prompt 模板（jinja2）
     dataset: str
     # 是否使用数据集自带的 prompt 模板做反推+重渲染。
@@ -117,7 +117,11 @@ class ExperimentConfig(BaseModel):
 
     @property
     def dataset_path(self) -> Path:
-        """约定数据集文件位于 data/<dataset>/<dataset>.xlsx。"""
+        """数据集文件：优先 .jsonl/.csv（字段无长度上限），回退 .xlsx。"""
+        for ext in (".jsonl", ".csv"):
+            candidate = self.dataset_dir / f"{self.dataset}{ext}"
+            if candidate.exists():
+                return candidate
         return self.dataset_dir / f"{self.dataset}.xlsx"
 
 
@@ -187,13 +191,13 @@ class ExperimentConfigLoader:
             )
         exp.prompt = self.prompts[exp.prompt].content
 
-        # 检查 dataset 约定：目录必须存在，且目录下有与目录同名的 xlsx
+        # 检查 dataset 约定：目录必须存在，且目录下有数据集文件（.jsonl/.csv/.xlsx）
         if not exp.dataset_dir.exists():
             raise FileNotFoundError(f"Dataset directory not found: {exp.dataset_dir}")
         if not exp.dataset_path.exists():
             raise FileNotFoundError(
                 f"Dataset file not found: {exp.dataset_path} "
-                f"(expected: data/<dataset>/<dataset>.xlsx)"
+                f"(expected: data/<dataset>/<dataset>.{{jsonl,csv,xlsx}})"
             )
 
         # 加载数据集自带的 prompt 模板（可选）：从 data/<dataset>/dataset-prompt-template.md
