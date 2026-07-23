@@ -285,6 +285,22 @@
             background: #e2f0ff;
             border-color: #0066cc;
         }
+        .ask-case-btn {
+            padding: 1px 7px;
+            border: 1px solid #c4b5fd;
+            background: #f5f3ff;
+            color: #6d28d9;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.6;
+            transition: all 0.2s;
+        }
+        .ask-case-btn:hover {
+            background: #ede9fe;
+            border-color: #7c3aed;
+        }
         .json-modal {
             position: fixed;
             inset: 0;
@@ -366,6 +382,159 @@
             font: 13px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
             white-space: pre-wrap;
             word-break: break-word;
+        }
+        .ask-panel-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1100;
+            display: flex;
+            justify-content: flex-end;
+            background: rgba(15, 23, 42, 0.35);
+        }
+        .ask-panel-overlay[hidden] {
+            display: none;
+        }
+        .ask-panel {
+            display: flex;
+            flex-direction: column;
+            width: min(580px, 94vw);
+            height: 100%;
+            background: #fff;
+            box-shadow: -12px 0 40px rgba(15, 23, 42, 0.18);
+        }
+        .ask-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 18px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .ask-panel-title {
+            font-size: 17px;
+            font-weight: 600;
+            color: #111827;
+        }
+        .ask-panel-subtitle {
+            margin-top: 2px;
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .ask-panel-close {
+            width: 32px;
+            height: 32px;
+            border: 0;
+            border-radius: 5px;
+            background: transparent;
+            color: #6b7280;
+            cursor: pointer;
+            font-size: 24px;
+            line-height: 1;
+        }
+        .ask-panel-close:hover {
+            background: #f3f4f6;
+            color: #111827;
+        }
+        .ask-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 18px;
+            background: #f8fafc;
+        }
+        .ask-empty {
+            margin-top: 28px;
+            color: #94a3b8;
+            text-align: center;
+            font-size: 13px;
+        }
+        .ask-message {
+            margin-bottom: 16px;
+        }
+        .ask-message-role {
+            margin-bottom: 4px;
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .ask-message-content {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fff;
+            color: #1f2937;
+            font-size: 14px;
+            line-height: 1.65;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .ask-message.user .ask-message-content {
+            border-color: #c4b5fd;
+            background: #f5f3ff;
+        }
+        .ask-message.streaming .ask-message-content::after {
+            content: "▋";
+            margin-left: 2px;
+            color: #7c3aed;
+            animation: ask-cursor 0.8s step-end infinite;
+        }
+        @keyframes ask-cursor {
+            50% { opacity: 0; }
+        }
+        .ask-composer {
+            padding: 14px 16px 16px;
+            border-top: 1px solid #e5e7eb;
+            background: #fff;
+        }
+        .ask-input {
+            width: 100%;
+            min-height: 84px;
+            max-height: 180px;
+            resize: vertical;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 7px;
+            color: #111827;
+            font: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .ask-input:focus {
+            outline: none;
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
+        }
+        .ask-composer-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .ask-status {
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .ask-send-btn {
+            padding: 7px 16px;
+            border: 0;
+            border-radius: 6px;
+            background: #7c3aed;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .ask-send-btn:hover:not(:disabled) {
+            background: #6d28d9;
+        }
+        .ask-send-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+        @media (max-width: 640px) {
+            .ask-panel {
+                width: 100%;
+            }
         }
         .score-badge {
             display: inline-block;
@@ -544,8 +713,29 @@
         </div>
     </div>
 
+    <div class="ask-panel-overlay" id="askPanelOverlay" hidden onclick="closeAskPanel()">
+        <aside class="ask-panel" role="dialog" aria-modal="true" aria-labelledby="askPanelTitle" onclick="event.stopPropagation()">
+            <div class="ask-panel-header">
+                <div>
+                    <div class="ask-panel-title" id="askPanelTitle">向大模型追问</div>
+                    <div class="ask-panel-subtitle" id="askPanelSubtitle">自动携带评分标准与当前 case 完整上下文</div>
+                </div>
+                <button type="button" class="ask-panel-close" aria-label="关闭追问面板" onclick="closeAskPanel()">&times;</button>
+            </div>
+            <div class="ask-messages" id="askMessages"></div>
+            <div class="ask-composer">
+                <textarea class="ask-input" id="askInput" maxlength="20000" placeholder="例如：为什么事实性只有 3 分？请核实评分分析指出的问题。"></textarea>
+                <div class="ask-composer-footer">
+                    <div class="ask-status" id="askStatus">Enter 发送，Shift+Enter 换行</div>
+                    <button type="button" class="ask-send-btn" id="askSendBtn" onclick="sendAskQuestion()">发送</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
     <script>
         // 数据
+        const REPORT_RUN_NAME = {{ run_name | tojson }};
         const ROWS_DATA = {{ rows | tojson }};
         const SCORE_SUMMARY = {{ score_summary | tojson }};
         const DIMENSIONS = {{ dimensions | tojson }};
@@ -757,6 +947,7 @@
                                 <div class="expand-label analysis-label">
                                     <span>评分分析</span>
                                     <button type="button" class="api-json-btn" onclick="openApiJsonModal(event, ${row.row_index})">查看 API JSON</button>
+                                    <button type="button" class="ask-case-btn" onclick="openAskPanel(event, ${row.row_index})">追问</button>
                                 </div>
                                 <div class="expand-text" id="analysis-${row.row_index}">${escapeHtmlWithNewlines(row.analysis)}</div>
                             </div>
@@ -868,8 +1059,240 @@
             });
         }
 
+        const ASK_SERVICE_AVAILABLE = (
+            window.location.protocol === 'http:'
+            && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+        );
+        let activeAskRowIndex = null;
+        let askBusy = false;
+
+        async function openAskPanel(event, rowIndex) {
+            event.stopPropagation();
+            if (!ASK_SERVICE_AVAILABLE) {
+                alert(
+                    '页面内追问需要启动本地服务。请在项目目录运行：\n\n'
+                    + `python -m src.cli report "${REPORT_RUN_NAME}" --serve`
+                );
+                return;
+            }
+            if (askBusy && rowIndex !== activeAskRowIndex) {
+                alert(`case #${activeAskRowIndex} 正在生成回答，请稍候。`);
+                return;
+            }
+
+            const overlay = document.getElementById('askPanelOverlay');
+            overlay.hidden = false;
+            document.body.style.overflow = 'hidden';
+
+            if (askBusy && rowIndex === activeAskRowIndex) {
+                scrollAskMessages();
+                return;
+            }
+
+            const previousRowIndex = activeAskRowIndex;
+            activeAskRowIndex = rowIndex;
+            if (previousRowIndex !== rowIndex) {
+                document.getElementById('askInput').value = '';
+            }
+            document.getElementById('askPanelTitle').textContent = `向大模型追问 · case #${rowIndex}`;
+            document.getElementById('askPanelSubtitle').textContent = '自动携带评分标准与当前 case 完整上下文';
+            document.getElementById('askStatus').textContent = '正在加载历史记录…';
+            document.getElementById('askMessages').replaceChildren();
+
+            try {
+                const response = await fetch(`/api/qa?row_index=${encodeURIComponent(rowIndex)}`, {
+                    cache: 'no-store',
+                });
+                if (!response.ok) {
+                    throw new Error(await readErrorResponse(response));
+                }
+                const payload = await response.json();
+                if (activeAskRowIndex !== rowIndex) return;
+                renderAskHistory(payload.history || []);
+                document.getElementById('askStatus').textContent = 'Enter 发送，Shift+Enter 换行';
+            } catch (error) {
+                if (activeAskRowIndex !== rowIndex) return;
+                appendAskMessage('assistant', `历史记录加载失败：${error.message}`, '系统');
+                document.getElementById('askStatus').textContent = '历史记录加载失败';
+            } finally {
+                if (
+                    activeAskRowIndex === rowIndex
+                    && !document.getElementById('askPanelOverlay').hidden
+                ) {
+                    document.getElementById('askInput').focus();
+                }
+            }
+        }
+
+        function closeAskPanel() {
+            document.getElementById('askPanelOverlay').hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function renderAskHistory(history) {
+            const container = document.getElementById('askMessages');
+            container.replaceChildren();
+            if (!history.length) {
+                const empty = document.createElement('div');
+                empty.className = 'ask-empty';
+                empty.textContent = '还没有追问。当前 case 的评分标准、请求上下文、回复和评分分析会自动发送给模型。';
+                container.appendChild(empty);
+                return;
+            }
+            history.forEach((item, index) => {
+                const turn = item.turn || index + 1;
+                appendAskMessage('user', item.question || '', `你 · Q${turn}`);
+                appendAskMessage('assistant', item.answer || '', `大模型 · A${turn}`);
+            });
+        }
+
+        function appendAskMessage(role, text, label) {
+            const container = document.getElementById('askMessages');
+            const empty = container.querySelector('.ask-empty');
+            if (empty) empty.remove();
+
+            const wrapper = document.createElement('div');
+            wrapper.className = `ask-message ${role}`;
+            const roleElement = document.createElement('div');
+            roleElement.className = 'ask-message-role';
+            roleElement.textContent = label;
+            const contentElement = document.createElement('div');
+            contentElement.className = 'ask-message-content';
+            contentElement.textContent = text;
+            wrapper.append(roleElement, contentElement);
+            container.appendChild(wrapper);
+            scrollAskMessages();
+            return { wrapper, contentElement };
+        }
+
+        function scrollAskMessages() {
+            const container = document.getElementById('askMessages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function sendAskQuestion() {
+            if (askBusy || activeAskRowIndex === null) return;
+            const input = document.getElementById('askInput');
+            const question = input.value.trim();
+            if (!question) {
+                input.focus();
+                return;
+            }
+
+            appendAskMessage('user', question, '你');
+            const assistantMessage = appendAskMessage('assistant', '', '大模型');
+            assistantMessage.wrapper.classList.add('streaming');
+            input.value = '';
+            setAskBusy(true);
+
+            let completedAnswer = '';
+            let completedTurn = null;
+            try {
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        row_index: activeAskRowIndex,
+                        question,
+                    }),
+                });
+                if (!response.ok) {
+                    throw new Error(await readErrorResponse(response));
+                }
+                if (!response.body) {
+                    throw new Error('浏览器不支持流式响应');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                const consumeEvent = line => {
+                    if (!line.trim()) return;
+                    const message = JSON.parse(line);
+                    if (message.type === 'start') {
+                        document.getElementById('askStatus').textContent = `${message.model} 正在回答…`;
+                    } else if (message.type === 'delta') {
+                        completedAnswer += message.content || '';
+                        assistantMessage.contentElement.textContent = completedAnswer;
+                        scrollAskMessages();
+                    } else if (message.type === 'done') {
+                        completedAnswer = message.answer ?? completedAnswer;
+                        completedTurn = message.turn;
+                        assistantMessage.contentElement.textContent = completedAnswer;
+                    } else if (message.type === 'error') {
+                        throw new Error(message.error || '模型调用失败');
+                    }
+                };
+
+                while (true) {
+                    const {value, done} = await reader.read();
+                    buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+                    let newlineIndex;
+                    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                        consumeEvent(buffer.slice(0, newlineIndex));
+                        buffer = buffer.slice(newlineIndex + 1);
+                    }
+                    if (done) break;
+                }
+                if (buffer.trim()) consumeEvent(buffer);
+
+                const row = ROWS_DATA.find(item => item.row_index === activeAskRowIndex);
+                if (row) {
+                    row.qa = row.qa || [];
+                    row.qa.push({
+                        row_index: activeAskRowIndex,
+                        turn: completedTurn || row.qa.length + 1,
+                        question,
+                        answer: completedAnswer,
+                    });
+                }
+                document.getElementById('askStatus').textContent = `已保存为第 ${completedTurn || '-'} 轮追问`;
+            } catch (error) {
+                const suffix = completedAnswer ? `\n\n[流式响应中断：${error.message}]` : `追问失败：${error.message}`;
+                assistantMessage.contentElement.textContent = completedAnswer + suffix;
+                document.getElementById('askStatus').textContent = '追问失败，可重试';
+            } finally {
+                assistantMessage.wrapper.classList.remove('streaming');
+                setAskBusy(false);
+                if (!document.getElementById('askPanelOverlay').hidden) {
+                    input.focus();
+                }
+            }
+        }
+
+        function setAskBusy(busy) {
+            askBusy = busy;
+            document.getElementById('askSendBtn').disabled = busy;
+        }
+
+        async function readErrorResponse(response) {
+            try {
+                const payload = await response.json();
+                return payload.error || `HTTP ${response.status}`;
+            } catch {
+                return `HTTP ${response.status}`;
+            }
+        }
+
+        document.getElementById('askInput').addEventListener('keydown', event => {
+            if (
+                event.key === 'Enter'
+                && !event.shiftKey
+                && !event.isComposing
+            ) {
+                event.preventDefault();
+                sendAskQuestion();
+            }
+        });
+
         document.addEventListener('keydown', event => {
-            if (event.key === 'Escape') closeApiJsonModal();
+            if (event.key !== 'Escape') return;
+            if (!document.getElementById('apiJsonModal').hidden) {
+                closeApiJsonModal();
+            } else if (!document.getElementById('askPanelOverlay').hidden) {
+                closeAskPanel();
+            }
         });
 
         // 初始化表格

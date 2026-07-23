@@ -6,7 +6,8 @@
 
 设计原则：最大化复用 advise 的"读 run 产物 -> 构造 messages -> call_model
 -> 写产物"模式与 reporter 的 load/extract 工具，不重写读取与调用逻辑。
-模型与 API key 复用 advise 配置（自带 enable_search，便于核实事实）。
+模型与 API key 复用 advise 配置（自带 enable_search，便于核实事实），
+模型调用统一复用 models.call_model_stream。
 """
 
 import json
@@ -15,7 +16,7 @@ from pathlib import Path
 from src.advisor import _extract_rendered_system
 from src.config import AdviseConfig
 from src.constants import RESULTS_DIR
-from src.models import call_model, create_client
+from src.models import ContentCallback, call_model_stream, create_client
 from src.reporter import (
     _extract_response_text,
     _extract_reasoning_text,
@@ -138,16 +139,37 @@ async def run_ask(
     run_name: str, row_index: int, question: str,
     advise_cfg: AdviseConfig, judge_prompt: str,
 ) -> str:
-    """单次追问：加载 case 上下文 -> 调用模型 -> 追加 qa.jsonl -> 返回答案。"""
+    """单次追问：使用流式模型调用，完成后追加 qa.jsonl 并返回完整答案。"""
+    answer, _ = await run_ask_stream(
+        run_name, row_index, question, advise_cfg, judge_prompt,
+    )
+    return answer
+
+
+async def run_ask_stream(
+    run_name: str, row_index: int, question: str,
+    advise_cfg: AdviseConfig, judge_prompt: str,
+    on_content: ContentCallback | None = None,
+) -> tuple[str, int]:
+    """流式追问，通过 on_content 逐段输出，并返回完整答案与 turn 编号。"""
+    question = question.strip()
+    if not question:
+        raise ValueError("追问内容不能为空")
+
     messages, qa_path, _ = _load_case_context(run_name, row_index, judge_prompt)
     messages.append({"role": "user", "content": question})
 
     client = create_client(advise_cfg.model)
-    response, _ = await call_model(client, advise_cfg.model, messages)
-    answer = _extract_response_text(response)
+    try:
+        response, _, _ = await call_model_stream(
+            client, advise_cfg.model, messages, on_content=on_content,
+        )
+    finally:
+        await client.close()
 
-    append_qa(qa_path, row_index, question, answer)
-    return answer
+    answer = _extract_response_text(response)
+    turn = append_qa(qa_path, row_index, question, answer)
+    return answer, turn
 
 
 async def run_ask_interactive(
@@ -162,24 +184,35 @@ async def run_ask_interactive(
     if prior_count:
         print(f"[ask] 已加载 {prior_count} 轮历史追问作为上下文")
 
-    while True:
-        try:
-            question = input("\n你的追问> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n[ask] 退出")
-            break
-        if not question:
-            break
+    try:
+        while True:
+            try:
+                question = input("\n你的追问> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n[ask] 退出")
+                break
+            if not question:
+                break
 
-        messages.append({"role": "user", "content": question})
-        try:
-            response, _ = await call_model(client, advise_cfg.model, messages)
-        except Exception as e:
-            print(f"[error] 调用失败: {e}")
-            messages.pop()  # 回滚未成功的提问，保持历史一致
-            continue
+            messages.append({"role": "user", "content": question})
+            next_turn = prior_count + 1
+            print(f"\n[A{next_turn}] ", end="", flush=True)
+            try:
+                response, _, _ = await call_model_stream(
+                    client,
+                    advise_cfg.model,
+                    messages,
+                    on_content=lambda text: print(text, end="", flush=True),
+                )
+            except Exception as e:
+                print(f"\n[error] 调用失败: {e}")
+                messages.pop()  # 回滚未成功的提问，保持历史一致
+                continue
 
-        answer = _extract_response_text(response)
-        messages.append({"role": "assistant", "content": answer})
-        turn = append_qa(qa_path, row_index, question, answer)
-        print(f"\n[A{turn}] {answer}")
+            answer = _extract_response_text(response)
+            messages.append({"role": "assistant", "content": answer})
+            append_qa(qa_path, row_index, question, answer)
+            prior_count = next_turn
+            print()
+    finally:
+        await client.close()

@@ -5,13 +5,17 @@
 支持通过 use_proxy 启用代理 + 禁用 SSL 验证（代理地址从环境变量 PROXY_URL 读取）。
 """
 
+import inspect
 import os
 import time
+from collections.abc import Awaitable, Callable
 
 import httpx
 from openai import AsyncOpenAI
 
 from src.config import ModelConfig
+
+ContentCallback = Callable[[str], Awaitable[None] | None]
 
 
 def create_client(model_config: ModelConfig) -> AsyncOpenAI:
@@ -63,6 +67,7 @@ async def call_model(client: AsyncOpenAI, model_config: ModelConfig, messages: l
 
 async def call_model_stream(
     client: AsyncOpenAI, model_config: ModelConfig, messages: list[dict],
+    on_content: ContentCallback | None = None,
 ) -> tuple[dict, dict, float | None]:
     """流式调用模型 API，逐 chunk 收集内容并组装为与非流式相同的响应格式。
 
@@ -72,6 +77,7 @@ async def call_model_stream(
         client: AsyncOpenAI 客户端实例
         model_config: 模型配置，call_params 提供 model、temperature 等参数
         messages: 渲染后的 messages 列表
+        on_content: 可选的内容增量回调，每收到一段文本调用一次；支持同步或异步函数
 
     Returns:
         (response_dict, actual_kwargs, ttft_ms)
@@ -103,6 +109,10 @@ async def call_model_stream(
             if first_token_time is None:
                 first_token_time = time.monotonic()
             content_parts.append(delta.content)
+            if on_content:
+                callback_result = on_content(delta.content)
+                if inspect.isawaitable(callback_result):
+                    await callback_result
         if chunk.choices[0].finish_reason:
             finish_reason = chunk.choices[0].finish_reason
 

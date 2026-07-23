@@ -5,7 +5,7 @@
   eval [run]       评测实验结果 (LLM-as-Judge)，默认评测最新实验
   import           从 Excel 导入已有数据（用于评测现网数据）
   show <run>       查看实验结果摘要
-  report <run>     生成 HTML 可视化报告
+  report <run>     生成 HTML 可视化报告，可用 --serve 在页面内流式追问
   export <run>     导出 Excel 文件
   calibrate [run]  对比人工评分与 Judge 评分，生成校准报告
   advise [run]     读取 run 结果，由大模型给出 System Prompt 优化建议
@@ -30,6 +30,7 @@ from src.evaluator import run_evaluation
 from src.experiment import run_experiment
 from src.importer import import_data
 from src.reporter import generate_html_report, export_excel, export_responses
+from src.report_server import serve_report
 
 
 def _resolve_run_name(run_name: str | None) -> str | None:
@@ -81,6 +82,8 @@ def main():
     report_p = sub.add_parser("report", help="生成 HTML 可视化报告")
     report_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
     report_p.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+    report_p.add_argument("--serve", action="store_true", help="启动本地交互服务，在报告内流式追问")
+    report_p.add_argument("--port", type=int, default=8765, help="本地交互服务端口（默认 8765）")
 
     export_p = sub.add_parser("export", help="导出 Excel 文件")
     export_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
@@ -156,9 +159,19 @@ def main():
             return
 
         try:
-            path = generate_html_report(run_name, open_browser=not args.no_open)
+            path = generate_html_report(
+                run_name,
+                open_browser=not args.no_open and not args.serve,
+            )
             print(f"[done] HTML 报告已生成 → {path}")
-        except FileNotFoundError as e:
+            if args.serve:
+                serve_report(
+                    run_name,
+                    path,
+                    port=args.port,
+                    open_browser=not args.no_open,
+                )
+        except (FileNotFoundError, OSError, ValueError) as e:
             print(f"[error] {e}")
     elif args.command == "export":
         run_name = _resolve_run_name(args.run)

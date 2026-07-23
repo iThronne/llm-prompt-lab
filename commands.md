@@ -78,6 +78,12 @@ python -m src.cli report --no-open
 # 指定实验的 HTML 报告
 python -m src.cli report <run_name>
 
+# 启动交互报告，在评分分析旁直接向大模型流式追问
+python -m src.cli report <run_name> --serve
+
+# 指定本地服务端口
+python -m src.cli report <run_name> --serve --port 8766
+
 # 导出最新实验为 Excel
 python -m src.cli export
 

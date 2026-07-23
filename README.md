@@ -343,6 +343,7 @@ python -m src.cli eval --force               # 评测配置变更后强制重新
 python -m src.cli report
 python -m src.cli report <run_name>
 python -m src.cli report --no-open           # 不自动打开浏览器
+python -m src.cli report <run_name> --serve  # 启动本地服务，在报告内流式追问
 
 # 导出 Excel 文件（省略 run_name 时使用最新实验）
 python -m src.cli export
@@ -498,7 +499,11 @@ python -m src.cli eval --force
 - **数据表格**：
   - 可搜索、可分页
   - 点击行展开查看完整 query / response / reasoning / 评分分析；评分分析旁可查看并复制实际发送的完整 API 请求 JSON
+  - 使用 `report <run_name> --serve` 后，可从评分分析旁的“追问”按钮打开聊天面板；自动携带评分标准和当前 case 上下文，回答按 token 流式显示并保存到 `qa.jsonl`
   - 支持按评分维度筛选和排序
+
+页面内追问由仅监听 `127.0.0.1` 的本地 Python 服务完成，模型和 API Key 复用
+`config/advise.yaml` 配置，浏览器不会接触 API Key。直接打开静态 HTML 时，“追问”按钮会提示先启动本地服务。
 
 ### Excel 导出
 
