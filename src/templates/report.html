@@ -383,6 +383,30 @@
             white-space: pre-wrap;
             word-break: break-word;
         }
+        .serve-help-content {
+            width: min(680px, 92vw);
+        }
+        .serve-help-body {
+            padding: 18px;
+        }
+        .serve-help-body p {
+            margin-bottom: 12px;
+            color: #4b5563;
+            font-size: 14px;
+        }
+        .serve-command {
+            margin: 0;
+            padding: 14px;
+            overflow-x: auto;
+            border: 1px solid #dbeafe;
+            border-radius: 6px;
+            background: #f8fafc;
+            color: #1e3a8a;
+            font: 13px/1.6 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            user-select: text;
+        }
         .ask-panel-overlay {
             position: fixed;
             inset: 0;
@@ -713,6 +737,22 @@
         </div>
     </div>
 
+    <div class="json-modal" id="serveHelpModal" role="dialog" aria-modal="true" aria-labelledby="serveHelpModalTitle" hidden onclick="closeServeHelpModal()">
+        <div class="json-modal-content serve-help-content" onclick="event.stopPropagation()">
+            <div class="json-modal-header">
+                <div class="json-modal-title" id="serveHelpModalTitle">启动页面内追问</div>
+                <div class="json-modal-actions">
+                    <button type="button" class="json-modal-btn" id="copyServeCommandBtn" onclick="copyServeCommand(this)">复制命令</button>
+                    <button type="button" class="json-modal-close" id="closeServeHelpBtn" aria-label="关闭启动说明" onclick="closeServeHelpModal()">&times;</button>
+                </div>
+            </div>
+            <div class="serve-help-body">
+                <p>页面内追问需要本地 Python 服务。请在项目根目录运行：</p>
+                <pre class="serve-command" id="serveCommandText"></pre>
+            </div>
+        </div>
+    </div>
+
     <div class="ask-panel-overlay" id="askPanelOverlay" hidden onclick="closeAskPanel()">
         <aside class="ask-panel" role="dialog" aria-modal="true" aria-labelledby="askPanelTitle" onclick="event.stopPropagation()">
             <div class="ask-panel-header">
@@ -1021,10 +1061,29 @@
             const el = document.getElementById(elementId);
             if (!el) return;
             const text = el.textContent;
-            navigator.clipboard.writeText(text).then(() => {
+            writeClipboardText(text).then(() => {
                 btn.classList.add('copied');
                 setTimeout(() => btn.classList.remove('copied'), 1500);
             });
+        }
+
+        async function writeClipboardText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            const copied = document.execCommand('copy');
+            textarea.remove();
+            if (!copied) throw new Error('浏览器拒绝复制');
         }
 
         let activeApiJsonText = '';
@@ -1053,9 +1112,51 @@
         }
 
         function copyApiJson(btn) {
-            navigator.clipboard.writeText(activeApiJsonText).then(() => {
+            writeClipboardText(activeApiJsonText).then(() => {
                 btn.classList.add('copied');
                 setTimeout(() => btn.classList.remove('copied'), 1500);
+            });
+        }
+
+        let serveCommandText = '';
+
+        function openServeHelpModal() {
+            const quotedRunName = REPORT_RUN_NAME.replace(/'/g, "''");
+            serveCommandText = `python -m src.cli report '${quotedRunName}' --serve`;
+            document.getElementById('serveCommandText').textContent = serveCommandText;
+
+            const copyButton = document.getElementById('copyServeCommandBtn');
+            copyButton.textContent = '复制命令';
+            copyButton.classList.remove('copied');
+
+            document.getElementById('serveHelpModal').hidden = false;
+            document.body.style.overflow = 'hidden';
+            copyButton.focus();
+        }
+
+        function closeServeHelpModal() {
+            const modal = document.getElementById('serveHelpModal');
+            if (modal.hidden) return;
+            modal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function copyServeCommand(btn) {
+            writeClipboardText(serveCommandText).then(() => {
+                btn.textContent = '已复制';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = '复制命令';
+                    btn.classList.remove('copied');
+                }, 1500);
+            }).catch(() => {
+                const command = document.getElementById('serveCommandText');
+                const range = document.createRange();
+                range.selectNodeContents(command);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                btn.textContent = '请手动复制';
             });
         }
 
@@ -1069,10 +1170,7 @@
         async function openAskPanel(event, rowIndex) {
             event.stopPropagation();
             if (!ASK_SERVICE_AVAILABLE) {
-                alert(
-                    '页面内追问需要启动本地服务。请在项目目录运行：\n\n'
-                    + `python -m src.cli report "${REPORT_RUN_NAME}" --serve`
-                );
+                openServeHelpModal();
                 return;
             }
             if (askBusy && rowIndex !== activeAskRowIndex) {
@@ -1290,6 +1388,8 @@
             if (event.key !== 'Escape') return;
             if (!document.getElementById('apiJsonModal').hidden) {
                 closeApiJsonModal();
+            } else if (!document.getElementById('serveHelpModal').hidden) {
+                closeServeHelpModal();
             } else if (!document.getElementById('askPanelOverlay').hidden) {
                 closeAskPanel();
             }
