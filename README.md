@@ -497,7 +497,7 @@ python -m src.cli eval --force
   - Token 用量柱状图
 - **数据表格**：
   - 可搜索、可分页
-  - 点击行展开查看完整 query / response / reasoning / 评分分析
+  - 点击行展开查看完整 query / response / reasoning / 评分分析；评分分析旁可查看并复制实际发送的完整 API 请求 JSON
   - 支持按评分维度筛选和排序
 
 ### Excel 导出

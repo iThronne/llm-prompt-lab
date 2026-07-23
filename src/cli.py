@@ -9,6 +9,7 @@
   export <run>     导出 Excel 文件
   calibrate [run]  对比人工评分与 Judge 评分，生成校准报告
   advise [run]     读取 run 结果，由大模型给出 System Prompt 优化建议
+  ask [run] -r N   就某个 case 向大模型追问（基于评分标准与 case 上下文）
 """
 
 import argparse
@@ -21,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.advisor import run_advise
+from src.asker import run_ask, run_ask_interactive
 from src.calibrate import generate_calibration_report
 from src.config import ExperimentConfigLoader, EvalConfigLoader, AdviseConfigLoader
 from src.constants import RESULTS_DIR
@@ -88,6 +90,11 @@ def main():
 
     advise_p = sub.add_parser("advise", help="读取 run 结果，由大模型给出 System Prompt 优化建议")
     advise_p.add_argument("run", nargs="?", help="run 名称（可选，默认最新已评测的 run）")
+
+    ask_p = sub.add_parser("ask", help="就某个 case 向大模型追问（基于评分标准与 case 上下文）")
+    ask_p.add_argument("run", nargs="?", help="run 名称（可选，默认最新已评测的 run）")
+    ask_p.add_argument("--row", "-r", type=int, required=True, help="case 的 row_index")
+    ask_p.add_argument("--question", "-q", help="单次追问内容；省略则进入交互式多轮")
 
     args = parser.parse_args()
 
@@ -194,6 +201,35 @@ def main():
             print(f"[error] {e}")
         except Exception as e:
             print(f"[error] advise 失败: {e}")
+
+    elif args.command == "ask":
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+        # ask 依赖评分上下文，未评测的 run 无意义
+        if not (RESULTS_DIR / run_name / "scores.jsonl").exists():
+            print(f"[error] 该 run 尚未评测，请先运行：python -m src.cli eval {run_name}")
+            return
+        try:
+            advise_cfg = AdviseConfigLoader().get_advise()
+            judge_prompt = EvalConfigLoader().get_eval().prompt
+        except (FileNotFoundError, ValueError) as e:
+            print(f"[error] {e}")
+            return
+        try:
+            if args.question:
+                answer = asyncio.run(run_ask(
+                    run_name, args.row, args.question, advise_cfg, judge_prompt,
+                ))
+                print(answer)
+            else:
+                asyncio.run(run_ask_interactive(
+                    run_name, args.row, advise_cfg, judge_prompt,
+                ))
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
+        except Exception as e:
+            print(f"[error] ask 失败: {e}")
 
 
 def _show_experiment(run_name: str):

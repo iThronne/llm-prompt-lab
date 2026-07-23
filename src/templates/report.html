@@ -264,6 +264,109 @@
             color: #22c55e;
             border-color: #22c55e;
         }
+        .analysis-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .api-json-btn {
+            padding: 1px 7px;
+            border: 1px solid #b8d6f2;
+            background: #f2f8ff;
+            color: #0066cc;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.6;
+            transition: all 0.2s;
+        }
+        .api-json-btn:hover {
+            background: #e2f0ff;
+            border-color: #0066cc;
+        }
+        .json-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.48);
+        }
+        .json-modal[hidden] {
+            display: none;
+        }
+        .json-modal-content {
+            display: flex;
+            flex-direction: column;
+            width: min(1000px, 92vw);
+            max-height: 88vh;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+            overflow: hidden;
+        }
+        .json-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 18px;
+            border-bottom: 1px solid #eee;
+        }
+        .json-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .json-modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .json-modal-btn {
+            padding: 4px 10px;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #555;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .json-modal-btn:hover {
+            color: #0066cc;
+            border-color: #0066cc;
+        }
+        .json-modal-btn.copied {
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+        .json-modal-close {
+            width: 30px;
+            height: 30px;
+            border: 0;
+            background: transparent;
+            color: #777;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 22px;
+            line-height: 1;
+        }
+        .json-modal-close:hover {
+            background: #f0f0f0;
+            color: #222;
+        }
+        .json-modal-body {
+            margin: 0;
+            padding: 18px;
+            overflow: auto;
+            background: #f8fafc;
+            color: #1f2937;
+            font: 13px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
         .score-badge {
             display: inline-block;
             padding: 2px 8px;
@@ -425,6 +528,19 @@
                 </tbody>
             </table>
             <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <div class="json-modal" id="apiJsonModal" role="dialog" aria-modal="true" aria-labelledby="apiJsonModalTitle" hidden onclick="closeApiJsonModal()">
+        <div class="json-modal-content" onclick="event.stopPropagation()">
+            <div class="json-modal-header">
+                <div class="json-modal-title" id="apiJsonModalTitle">完整 API 请求 JSON</div>
+                <div class="json-modal-actions">
+                    <button type="button" class="json-modal-btn" id="copyApiJsonBtn" onclick="copyApiJson(this)">复制 JSON</button>
+                    <button type="button" class="json-modal-close" id="closeApiJsonBtn" aria-label="关闭" onclick="closeApiJsonModal()">&times;</button>
+                </div>
+            </div>
+            <pre class="json-modal-body" id="apiJsonModalBody"></pre>
         </div>
     </div>
 
@@ -638,8 +754,18 @@
                             ${row.analysis ? `
                             <div class="expand-section">
                                 <button class="copy-btn" onclick="copyText(this, 'analysis-${row.row_index}')">复制</button>
-                                <div class="expand-label">评分分析</div>
+                                <div class="expand-label analysis-label">
+                                    <span>评分分析</span>
+                                    <button type="button" class="api-json-btn" onclick="openApiJsonModal(event, ${row.row_index})">查看 API JSON</button>
+                                </div>
                                 <div class="expand-text" id="analysis-${row.row_index}">${escapeHtmlWithNewlines(row.analysis)}</div>
+                            </div>
+                            ` : ''}
+                            ${row.qa && row.qa.length ? `
+                            <div class="expand-section">
+                                <button class="copy-btn" onclick="copyText(this, 'qa-${row.row_index}')">复制</button>
+                                <div class="expand-label">追问记录（${row.qa.length}）</div>
+                                <div class="expand-text" id="qa-${row.row_index}">${row.qa.map((t, i) => `<b>Q${i + 1}：</b>${escapeHtml(t.question)}<br><b>A${i + 1}：</b>${escapeHtmlWithNewlines(t.answer)}`).join('<hr>')}</div>
                             </div>
                             ` : ''}
                         </div>
@@ -709,6 +835,42 @@
                 setTimeout(() => btn.classList.remove('copied'), 1500);
             });
         }
+
+        let activeApiJsonText = '';
+
+        function openApiJsonModal(event, rowIndex) {
+            event.stopPropagation();
+            const row = ROWS_DATA.find(item => item.row_index === rowIndex);
+            if (!row) return;
+
+            activeApiJsonText = JSON.stringify(row.api_json ?? {}, null, 2);
+            document.getElementById('apiJsonModalTitle').textContent = `完整 API 请求 JSON · #${rowIndex}`;
+            document.getElementById('apiJsonModalBody').textContent = activeApiJsonText;
+            document.getElementById('copyApiJsonBtn').classList.remove('copied');
+
+            const modal = document.getElementById('apiJsonModal');
+            modal.hidden = false;
+            document.body.style.overflow = 'hidden';
+            document.getElementById('closeApiJsonBtn').focus();
+        }
+
+        function closeApiJsonModal() {
+            const modal = document.getElementById('apiJsonModal');
+            if (modal.hidden) return;
+            modal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        function copyApiJson(btn) {
+            navigator.clipboard.writeText(activeApiJsonText).then(() => {
+                btn.classList.add('copied');
+                setTimeout(() => btn.classList.remove('copied'), 1500);
+            });
+        }
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeApiJsonModal();
+        });
 
         // 初始化表格
         renderTable();

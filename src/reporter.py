@@ -65,6 +65,24 @@ def load_scores(path: Path) -> dict[int, dict]:
     return scores
 
 
+def load_qa(path: Path) -> dict[int, list[dict]]:
+    """从 qa.jsonl 加载追问记录，按 row_index 分组、按 turn 排序。
+
+    qa.jsonl 由 ask 命令逐行追加，每行一条 {row_index, turn, question, answer}。
+    """
+    qa: dict[int, list[dict]] = {}
+    if not path.exists():
+        return qa
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                qa.setdefault(entry["row_index"], []).append(entry)
+    for idx in qa:
+        qa[idx].sort(key=lambda e: e.get("turn", 0))
+    return qa
+
+
 def _extract_response_text(response: dict) -> str:
     """从 API 响应中提取回复文本。"""
     try:
@@ -204,6 +222,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
 
     responses = load_responses(responses_path)
     scores = load_scores(scores_path)
+    qa_map = load_qa(result_dir / "qa.jsonl")
 
     # 读取 summary（如有）
     summary = None
@@ -241,6 +260,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
             "reasoning": _extract_reasoning_text(response),
             "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
+            "api_json": r.get("rendered_request", {}),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
@@ -254,6 +274,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
                 dim_name_map,
                 dim_name_reverse,
             ),
+            "qa": qa_map.get(row_idx, []),
         })
 
     # 统计数据
