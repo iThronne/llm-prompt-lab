@@ -300,10 +300,12 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     dimensions = summary.get("dimensions", []) if summary else []
     has_score_averages = any(f"avg_{dim}" in score_summary for dim in dimensions)
 
-    # 生成维度标签（中文名 + 平均分）
+    # 生成维度名称与标签（标签包含初始平均分，浏览器可按手动排除项重算）
+    dim_names = {}
     dim_labels = {}
     for dim in dimensions:
         chinese_name = dim_name_map.get(dim, dim)
+        dim_names[dim] = chinese_name
         avg_score = score_summary.get(f"avg_{dim}")
         if avg_score is not None:
             dim_labels[dim] = f"{chinese_name}（{avg_score}分）"
@@ -319,6 +321,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
         rows=rows_data,
         score_summary=score_summary,
         dimensions=dimensions,
+        dim_names=dim_names,
         dim_labels=dim_labels,
         has_scores=bool(scores),
         has_score_averages=has_score_averages,

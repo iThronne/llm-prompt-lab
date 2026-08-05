@@ -57,6 +57,11 @@
             color: #1a1a1a;
             margin-top: 4px;
         }
+        .stat-detail {
+            margin-top: 4px;
+            color: #888;
+            font-size: 12px;
+        }
 
         /* Charts */
         .charts-section {
@@ -100,6 +105,29 @@
         .table-title {
             font-size: 18px;
             font-weight: 600;
+        }
+        .statistics-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 4px;
+            color: #777;
+            font-size: 12px;
+        }
+        .statistics-reset-btn {
+            border: 0;
+            padding: 0;
+            background: none;
+            color: #0066cc;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .statistics-reset-btn:hover:not(:disabled) {
+            text-decoration: underline;
+        }
+        .statistics-reset-btn:disabled {
+            color: #aaa;
+            cursor: default;
         }
         .table-controls {
             display: flex;
@@ -205,6 +233,30 @@
         }
         .data-table tr.expanded {
             background: #f0f7ff;
+        }
+        .statistics-toggle-cell {
+            width: 72px;
+            text-align: center !important;
+        }
+        .statistics-toggle {
+            width: 16px;
+            height: 16px;
+            accent-color: #0066cc;
+            cursor: pointer;
+            vertical-align: middle;
+        }
+        .statistics-toggle-unavailable {
+            color: #bbb;
+        }
+        .data-table tr.excluded-from-statistics > td:not(.statistics-toggle-cell) {
+            background: #fafafa;
+            color: #999;
+        }
+        .data-table tr.excluded-from-statistics .score-badge {
+            opacity: 0.4;
+        }
+        .data-table tr.excluded-from-statistics.expanded {
+            background: #f5f5f5;
         }
         .text-truncate {
             max-width: 300px;
@@ -627,6 +679,13 @@
                 <div class="stat-value">{{ "{:,}".format(stats.total_tokens) }}</div>
             </div>
             {% endif %}
+            {% if has_scores %}
+            <div class="stat-card">
+                <div class="stat-label">计分行数</div>
+                <div class="stat-value"><span id="includedStatsCount">-</span> / <span id="scorableStatsCount">-</span></div>
+                <div class="stat-detail" id="excludedStatsDetail">手动排除 0 行</div>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Charts -->
@@ -643,7 +702,7 @@
 
                 {% if has_scores and has_score_averages %}
                 <div class="chart-card">
-                    <div class="chart-title">评分雷达图</div>
+                    <div class="chart-title" id="scoreRadarTitle">评分雷达图</div>
                     <div class="chart-container">
                         <canvas id="scoreRadarChart"></canvas>
                     </div>
@@ -664,7 +723,15 @@
         <!-- Data Table -->
         <div class="table-section">
             <div class="table-header">
-                <div class="table-title">数据详情</div>
+                <div>
+                    <div class="table-title">数据详情</div>
+                    {% if has_scores %}
+                    <div class="statistics-toolbar">
+                        <span>取消勾选可将该行排除出评分统计，标记保存在当前浏览器</span>
+                        <button type="button" class="statistics-reset-btn" id="resetStatisticsExclusions" onclick="resetStatisticsExclusions()" disabled>恢复全部计入</button>
+                    </div>
+                    {% endif %}
+                </div>
                 <div class="table-controls">
                     <input type="text" class="search-box" placeholder="搜索 query 或 response..." id="searchInput">
                     {% if has_scores %}
@@ -679,7 +746,7 @@
                     <select class="filter-select" id="sortField" onchange="applyFilters()">
                         <option value="">默认</option>
                         {% for dim in dimensions %}
-                        <option value="{{ dim }}">{{ dim_labels[dim] }}</option>
+                        <option value="{{ dim }}" id="dimensionOption_{{ dim }}">{{ dim_labels[dim] }}</option>
                         {% endfor %}
                         <option value="latency_ms">延迟</option>
                         {% if has_ttft %}
@@ -693,7 +760,7 @@
                 </div>
                 {% for dim in dimensions %}
                 <div class="filter-group">
-                    <label>{{ dim_labels[dim] }} ≥</label>
+                    <label><span id="filterDimensionLabel_{{ dim }}">{{ dim_labels[dim] }}</span> ≥</label>
                     <input type="number" class="filter-input" id="min_{{ dim }}" min="0" max="5" step="1" placeholder="0" onchange="applyFilters()">
                 </div>
                 {% endfor %}
@@ -703,12 +770,15 @@
             <table class="data-table">
                 <thead>
                     <tr>
+                        {% if has_scores %}
+                        <th class="statistics-toggle-cell" title="勾选表示该行计入评分统计">计入统计</th>
+                        {% endif %}
                         <th>#</th>
                         <th>Query</th>
                         <th>Response</th>
                         {% if has_scores %}
                         {% for dim in dimensions %}
-                        <th class="sortable" onclick="sortByField('{{ dim }}')">{{ dim_labels[dim] }}<span class="sort-indicator" id="sort_{{ dim }}"></span></th>
+                        <th class="sortable" onclick="sortByField('{{ dim }}')"><span id="dimensionHeaderLabel_{{ dim }}">{{ dim_labels[dim] }}</span><span class="sort-indicator" id="sort_{{ dim }}"></span></th>
                         {% endfor %}
                         {% endif %}
                         <th class="sortable" onclick="sortByField('latency_ms')">延迟<span class="sort-indicator" id="sort_latency_ms"></span></th>
@@ -779,7 +849,7 @@
         const ROWS_DATA = {{ rows | tojson }};
         const SCORE_SUMMARY = {{ score_summary | tojson }};
         const DIMENSIONS = {{ dimensions | tojson }};
-        const DIM_LABELS = {{ dim_labels | tojson }};
+        const DIM_NAMES = {{ dim_names | tojson }};
         const HAS_SCORES = {{ has_scores | tojson }};
         const HAS_TTFT = {{ has_ttft | tojson }};
 
@@ -789,6 +859,118 @@
         let filteredRows = ROWS_DATA;
         let currentSortField = '';
         let currentSortOrder = 'desc';
+        let scoreRadarChart = null;
+
+        // 手动排除项只影响评分均值，不影响延迟、Token 等运行统计。
+        const STATISTICS_EXCLUSIONS_KEY = `llm-prompt-lab:statistics-exclusions:${REPORT_RUN_NAME}`;
+
+        function rowHasNumericScore(row) {
+            return DIMENSIONS.some(dim => Number.isFinite(row.scores[dim]));
+        }
+
+        const SCORABLE_ROW_KEYS = new Set(
+            ROWS_DATA.filter(rowHasNumericScore).map(row => String(row.row_index))
+        );
+
+        function loadStatisticsExclusions() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(STATISTICS_EXCLUSIONS_KEY) || '[]');
+                if (!Array.isArray(stored)) return new Set();
+                return new Set(stored.map(String).filter(key => SCORABLE_ROW_KEYS.has(key)));
+            } catch (_error) {
+                return new Set();
+            }
+        }
+
+        let excludedStatisticsRows = loadStatisticsExclusions();
+
+        function saveStatisticsExclusions() {
+            try {
+                localStorage.setItem(
+                    STATISTICS_EXCLUSIONS_KEY,
+                    JSON.stringify(Array.from(excludedStatisticsRows))
+                );
+            } catch (_error) {
+                // 某些浏览器会禁止 file:// 页面使用 localStorage；本次打开期间仍然有效。
+            }
+        }
+
+        function isRowExcludedFromStatistics(rowIndex) {
+            return excludedStatisticsRows.has(String(rowIndex));
+        }
+
+        function recomputeScoreStatistics() {
+            const adjusted = {};
+            DIMENSIONS.forEach(dim => {
+                const values = ROWS_DATA
+                    .filter(row => !isRowExcludedFromStatistics(row.row_index))
+                    .map(row => row.scores[dim])
+                    .filter(Number.isFinite);
+                adjusted[dim] = {
+                    count: values.length,
+                    average: values.length
+                        ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2))
+                        : null,
+                };
+            });
+            return adjusted;
+        }
+
+        function scoreDimensionLabel(dim, scoreStatistics) {
+            const name = DIM_NAMES[dim] || dim;
+            const stats = scoreStatistics[dim];
+            return stats.average === null ? name : `${name}（${stats.average}分）`;
+        }
+
+        function refreshScoreStatistics() {
+            if (!HAS_SCORES) return;
+            const scoreStatistics = recomputeScoreStatistics();
+            const scorableCount = SCORABLE_ROW_KEYS.size;
+            const excludedCount = excludedStatisticsRows.size;
+            const includedCount = scorableCount - excludedCount;
+
+            document.getElementById('includedStatsCount').textContent = includedCount;
+            document.getElementById('scorableStatsCount').textContent = scorableCount;
+            document.getElementById('excludedStatsDetail').textContent = `手动排除 ${excludedCount} 行`;
+            document.getElementById('resetStatisticsExclusions').disabled = excludedCount === 0;
+
+            DIMENSIONS.forEach(dim => {
+                const label = scoreDimensionLabel(dim, scoreStatistics);
+                document.getElementById(`dimensionHeaderLabel_${dim}`).textContent = label;
+                document.getElementById(`dimensionOption_${dim}`).textContent = label;
+                document.getElementById(`filterDimensionLabel_${dim}`).textContent = label;
+            });
+
+            const chartDimensions = DIMENSIONS.filter(dim => scoreStatistics[dim].average !== null);
+            if (scoreRadarChart) {
+                scoreRadarChart.data.labels = chartDimensions.map(dim => DIM_NAMES[dim] || dim);
+                scoreRadarChart.data.datasets[0].data = chartDimensions.map(dim => scoreStatistics[dim].average);
+                scoreRadarChart.update();
+            }
+            const radarTitle = document.getElementById('scoreRadarTitle');
+            if (radarTitle) radarTitle.textContent = `评分雷达图（计入 ${includedCount} 行）`;
+        }
+
+        function setRowIncludedInStatistics(event, rowIndex) {
+            event.stopPropagation();
+            const key = String(rowIndex);
+            if (!SCORABLE_ROW_KEYS.has(key)) return;
+            if (event.target.checked) {
+                excludedStatisticsRows.delete(key);
+            } else {
+                excludedStatisticsRows.add(key);
+            }
+            saveStatisticsExclusions();
+            renderTable();
+            refreshScoreStatistics();
+        }
+
+        function resetStatisticsExclusions() {
+            excludedStatisticsRows.clear();
+            saveStatisticsExclusions();
+            renderTable();
+            refreshScoreStatistics();
+        }
 
         // 搜索
         document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -917,8 +1099,29 @@
                 const tr = document.createElement('tr');
                 tr.onclick = () => toggleExpand(row.row_index);
                 tr.id = `row-${row.row_index}`;
+                if (isRowExcludedFromStatistics(row.row_index)) {
+                    tr.classList.add('excluded-from-statistics');
+                }
 
-                let html = `
+                let html = '';
+                if (HAS_SCORES) {
+                    if (rowHasNumericScore(row)) {
+                        const checked = isRowExcludedFromStatistics(row.row_index) ? '' : 'checked';
+                        html += `
+                            <td class="statistics-toggle-cell">
+                                <input type="checkbox" class="statistics-toggle" ${checked}
+                                    data-row-index="${escapeHtml(String(row.row_index))}"
+                                    aria-label="第 ${escapeHtml(String(row.row_index))} 行是否计入评分统计"
+                                    title="勾选表示计入评分统计"
+                                    onclick="event.stopPropagation()"
+                                    onchange="setRowIncludedInStatistics(event, this.dataset.rowIndex)">
+                            </td>
+                        `;
+                    } else {
+                        html += `<td class="statistics-toggle-cell statistics-toggle-unavailable" title="该行没有有效评分">-</td>`;
+                    }
+                }
+                html += `
                     <td>${row.row_index}</td>
                     <td class="text-truncate">${escapeHtml(row.query)}</td>
                     <td class="text-truncate">${escapeHtml(row.response)}</td>
@@ -1010,7 +1213,7 @@
 
         function getColspan() {
             let cols = 3; // #, Query, Response
-            if (HAS_SCORES) cols += DIMENSIONS.length;
+            if (HAS_SCORES) cols += DIMENSIONS.length + 1; // 评分维度 + 计入统计
             cols += 1; // 延迟
             if (HAS_TTFT) cols += 1;
             return cols;
@@ -1432,11 +1635,11 @@
         // 评分雷达图
         const scoreLabels = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
-            .map(d => DIM_LABELS[d] || d);
+            .map(d => DIM_NAMES[d] || d);
         const scoreValues = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
             .map(d => SCORE_SUMMARY['avg_' + d]);
-        new Chart(document.getElementById('scoreRadarChart'), {
+        scoreRadarChart = new Chart(document.getElementById('scoreRadarChart'), {
             type: 'radar',
             data: {
                 labels: scoreLabels,
@@ -1465,6 +1668,8 @@
             }
         });
         {% endif %}
+
+        refreshScoreStatistics();
 
         {% if stats.total_tokens %}
         // Token 用量柱状图
