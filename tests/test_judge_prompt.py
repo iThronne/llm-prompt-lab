@@ -31,6 +31,16 @@ class JudgePromptTests(unittest.TestCase):
         self.assertIn("来源可靠性，以及关键内容能否通过外部核验", self.prompt)
         self.assertIn("任一适用维度为 2 分时，overall 不得超过 2", self.prompt)
 
+    def test_search_planning_scores_search_decision_even_without_search(self):
+        start = self.prompt.index("### 搜索规划 (search_planning)")
+        end = self.prompt.index("### 搜索结果相关性 (search_relevance)")
+        section = self.prompt[start:end]
+
+        self.assertIn("本维度**始终适用**", section)
+        self.assertIn("需要搜索却没有搜索，或不需要搜索却发起搜索", section)
+        self.assertIn("不需要搜索时，准确决定不搜索", section)
+        self.assertNotIn("不适用条件", section)
+
     def test_removes_genre_creation_rules(self):
         removed_markers = [
             "创作意图识别",

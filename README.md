@@ -444,7 +444,7 @@ python -m src.cli import my_dataset
 | structure（结构化） | 回复组织是否清晰合理 |
 | timeliness（实时性） | 回复是否考虑了时间敏感性（新闻、金价、天气等） |
 | localization（本地化） | 回复是否适配了用户的语言和位置偏好 |
-| search_planning（搜索规划） | 搜索关键词是否合理、能否有效服务于用户 Query |
+| search_planning（搜索规划） | 是否正确决定搜索，以及搜索时的关键词是否合理 |
 | search_relevance（搜索结果相关性） | 搜索结果是否贴合 Query，是否包含无关结果，是否足以支撑回答 |
 | search_utilization（搜索结果利用） | 模型对搜索结果的筛选判断与利用质量 |
 | overall（综合评分） | 整体质量评价 |
