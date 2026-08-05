@@ -6,8 +6,13 @@ model:
   model: qwen3.7-max
   base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
   api_key_env: JUDGE_OPENAI_API_KEY
+  # 固定采样参数，降低同一输入重复评测时的随机波动。
+  temperature: 0
+  top_p: 1
+  seed: 7
   max_tokens: 4096
   extra_body:
+    # 用于核验关键事实、候选搜索结果准确性和实时性；评分结果由断点文件固定。
     enable_search: true
 prompt: judge-prompt.md
 dimensions: [ "relevance", "factuality", "fluency", "structure", "timeliness", "localization", "search_planning", "search_relevance", "search_utilization", "overall" ]

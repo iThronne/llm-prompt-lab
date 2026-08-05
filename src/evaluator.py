@@ -22,7 +22,6 @@ from src.models import create_client, call_model, call_model_stream
 from src.reporter import load_responses, load_scores
 from src.sanitizer import compile_rules, sanitize_messages
 
-JUDGE_SEED = 7
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
 EVAL_META_FILE = "eval_meta.json"
@@ -179,14 +178,12 @@ async def run_evaluation(
                                 tqdm.write(f"[warn] 首样本调试 dump 失败: {e}")
 
                 score_entry = None
-                # 通过 model_copy 注入 seed 参数（保证评测可复现）
-                seeded_cfg = judge_model_cfg.model_copy(update={"seed": JUDGE_SEED})
                 for attempt in range(1 + MAX_RETRIES):
                     try:
                         if judge_model_cfg.stream:
-                            response_dict, _, _ = await call_model_stream(client, seeded_cfg, messages)
+                            response_dict, _, _ = await call_model_stream(client, judge_model_cfg, messages)
                         else:
-                            response_dict, _ = await call_model(client, seeded_cfg, messages)
+                            response_dict, _ = await call_model(client, judge_model_cfg, messages)
 
                         finish_reason = response_dict["choices"][0].get("finish_reason")
                         if finish_reason == "length":
@@ -277,7 +274,7 @@ def _build_judge_messages(
     """构建 judge API 调用的 messages。
 
     Args:
-        system_prompt: 完整的评分标准（来自 judge prompt 文件，已包含体裁清单）
+        system_prompt: 完整的评分标准（来自 judge prompt 文件）
         candidate_messages: 候选模型的完整 messages 列表（已脱敏，含 system）
         response: 模型回复
         language: 用户语言，用于评测本地化维度

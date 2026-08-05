@@ -463,9 +463,11 @@ python -m src.cli import my_dataset
 
 ### 稳定性保障
 
-- 调用 Judge 模型时固定 `temperature=0` + `seed` 参数
+- 调用 Judge 模型时显式固定 `temperature=0`、`top_p=1` 和 `seed`；这些参数写入 `eval.yaml` 并参与配置 hash
+- Judge 仅在核验关键事实、候选搜索结果准确性和实时性时联网，并固定 Query 时间基准与来源优先级；同一 run 的后续 `eval` 复用已有评分
 - Judge prompt 作为 system 消息，待评测内容作为 user 消息，支持 prompt cache
-- 要求 Judge 先逐维度分析再给出评分（chain-of-thought），减少随机性
+- 要求 Judge 按维度输出可核查的判定依据，并只评价可观察证据，不推测隐藏推理链
+- 以 3 分为合格基准，4/5 分必须有具体证据；5 分仅用于逐项核查后无可识别缺陷的回复，避免 Judge 高分偏置
 - 评测本身也支持断点续评，已评分条目不会重复调用 Judge 模型
 - 失败时采用指数退避重试
 
