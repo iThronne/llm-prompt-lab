@@ -111,6 +111,17 @@ async def run_evaluation(
             done_count = len(existing_scores)
             print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
 
+    # 空回复没有可评内容：记录为已跳过，避免送给 Judge，也避免断点续跑时反复尝试。
+    # 同时覆盖旧版本可能已经为这些行生成的分数，防止其继续污染统计。
+    empty_response_count = 0
+    for r in results:
+        if _is_empty_response(r.get("response")):
+            row_idx = r["row_index"]
+            existing_scores[row_idx] = _build_skipped_score(r, eval_cfg.dimensions)
+            empty_response_count += 1
+    if empty_response_count:
+        print(f"[info] 跳过 {empty_response_count} 条空回复（不调用 Judge、不计入统计）")
+
     # 筛选待评测的条目
     pending = [r for r in results if r["row_index"] not in existing_scores]
 
@@ -222,6 +233,8 @@ async def run_evaluation(
     # 汇总统计
     all_scores = [existing_scores[i] for i in sorted(existing_scores)]
     summary = _compute_summary(all_scores, eval_cfg.dimensions)
+    scored_count = sum(_has_any_numeric_score(s, eval_cfg.dimensions) for s in all_scores)
+    skipped_count = sum(s.get("error") == "empty_response" for s in all_scores)
     failed_count = len(results) - len(all_scores)
 
     output = {
@@ -229,7 +242,8 @@ async def run_evaluation(
         "judge_model": judge_model_cfg.model,
         "dimensions": eval_cfg.dimensions,
         "summary": summary,
-        "total_scored": len(all_scores),
+        "total_scored": scored_count,
+        "skipped_count": skipped_count,
         "failed_count": failed_count,
     }
     summary_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -295,9 +309,29 @@ def _build_judge_messages(
 def _extract_response_text(response: dict) -> str:
     """从 API 响应中提取回复文本。"""
     try:
-        return response["choices"][0]["message"]["content"]
+        content = response["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
-        return str(response)
+        return ""
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)
+
+
+def _is_empty_response(response: dict | None) -> bool:
+    """判断候选模型回复是否为 None、缺失或仅含空白字符。"""
+    return not _extract_response_text(response).strip()
+
+
+def _build_skipped_score(result: dict, dimensions: list[str]) -> dict:
+    """为空回复生成可断点续跑、但不会参与统计的占位评分。"""
+    return {
+        "row_index": result["row_index"],
+        "query": result.get("query", ""),
+        "response_summary": "",
+        "error": "empty_response",
+        "analysis": "候选模型回复为空，已跳过评测。",
+        **{dim: None for dim in dimensions},
+    }
 
 
 def _extract_json_string(content: str) -> str:
@@ -394,15 +428,41 @@ def _parse_judge_output(content: str, dimensions: list[str]) -> dict:
     if missing:
         raise ValueError(f"Judge 输出缺少必需字段: {missing}")
 
+    # 不适用维度使用 null；兼容模型偶尔按展示约定返回的 "-"。
+    for dim in dimensions:
+        value = parsed[dim]
+        if value == "-":
+            parsed[dim] = None
+            continue
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 5:
+            raise ValueError(f"Judge 输出维度 {dim} 的值无效: {value!r}（应为 1-5 或 null）")
+
     return parsed
 
 
+def _has_numeric_score(score: dict, dimension: str) -> bool:
+    """是否包含一个可参与统计的数值评分（bool 不视为分数）。"""
+    value = score.get(dimension)
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _has_any_numeric_score(score: dict, dimensions: list[str]) -> bool:
+    """一条记录是否至少有一个配置维度可参与统计。"""
+    return any(_has_numeric_score(score, dim) for dim in dimensions)
+
+
 def _compute_summary(scores: list[dict], dimensions: list[str]) -> dict:
-    """计算各维度平均分。"""
-    summary = {"total_items": len(scores)}
+    """按维度计算平均分；空回复和不适用维度不进入对应分母。"""
+    summary = {
+        "total_items": sum(_has_any_numeric_score(s, dimensions) for s in scores),
+        "total_records": len(scores),
+    }
 
     for dim in dimensions:
-        values = [s[dim] for s in scores if dim in s and isinstance(s[dim], (int, float))]
+        values = [s[dim] for s in scores if _has_numeric_score(s, dim)]
+        summary[f"count_{dim}"] = len(values)
         if values:
             summary[f"avg_{dim}"] = round(sum(values) / len(values), 2)
     return summary

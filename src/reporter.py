@@ -86,9 +86,12 @@ def load_qa(path: Path) -> dict[int, list[dict]]:
 def _extract_response_text(response: dict) -> str:
     """从 API 响应中提取回复文本。"""
     try:
-        return response["choices"][0]["message"]["content"]
+        content = response["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return ""
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)
 
 
 def _extract_reasoning_text(response: dict) -> str:
@@ -125,13 +128,13 @@ def _enrich_analysis(analysis: str, scores: dict, dim_name_map: dict, dim_name_r
         if english_name and english_name in scores:
             score = scores[english_name]
             if score is None:
-                return f"{chinese_name}（N/A）："
+                return f"{chinese_name}（-）："
             return f"{chinese_name}（{score}分）："
         return match.group(0)
 
-    # 从 dim_name_map 动态构建匹配模式：维度中文名 + 可选的（N分）或（N/A）+ 冒号
+    # 从 dim_name_map 动态构建匹配模式：维度中文名 + 可选的（N分）/（-）/（N/A）+ 冒号
     chinese_names = "|".join(dim_name_map.values())
-    pattern = rf"({chinese_names})(?:（\d+分|N/A）)?："
+    pattern = rf"({chinese_names})(?:（\d+分|-|N/A）)?："
     return re.sub(pattern, replace_dim, analysis)
 
 
@@ -295,6 +298,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     # 评分汇总
     score_summary = summary.get("summary", {}) if summary else {}
     dimensions = summary.get("dimensions", []) if summary else []
+    has_score_averages = any(f"avg_{dim}" in score_summary for dim in dimensions)
 
     # 生成维度标签（中文名 + 平均分）
     dim_labels = {}
@@ -317,6 +321,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
         dimensions=dimensions,
         dim_labels=dim_labels,
         has_scores=bool(scores),
+        has_score_averages=has_score_averages,
         has_ttft=bool(ttfts),
     )
 
@@ -356,9 +361,11 @@ def export_excel(run_name: str) -> Path:
     summary_data.append({"Key": "Experiment", "Value": run_name})
     summary_data.append({"Key": "Total Rows", "Value": len(responses)})
 
+    score_dimensions = []
     if summary_path.exists():
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
+        score_dimensions = summary.get("dimensions", [])
         summary_data.append({"Key": "Judge Model", "Value": summary.get("judge_model", "N/A")})
         for k, v in summary.get("summary", {}).items():
             summary_data.append({"Key": k, "Value": v})
@@ -397,6 +404,10 @@ def export_excel(run_name: str) -> Path:
     df_scores = pd.DataFrame(scores_data)
     # 左连接：以 Responses 为主，评分列追加在右侧；query 列已在 Responses 中，不再重复
     df_responses = df_responses.merge(df_scores, on="row_index", how="left")
+    # JSON 中以 null 保存缺失评分；Excel 中按产品展示约定显示为 "-"。
+    for dim in score_dimensions:
+        if dim in df_responses.columns:
+            df_responses[dim] = df_responses[dim].astype(object).where(df_responses[dim].notna(), "-")
     # 超长文本列兜底（analysis、response 等可能超过 Excel 单元格上限）
     df_responses = _cap_long_text_columns(df_responses)
 

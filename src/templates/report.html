@@ -641,7 +641,7 @@
                 </div>
                 {% endif %}
 
-                {% if has_scores and score_summary %}
+                {% if has_scores and has_score_averages %}
                 <div class="chart-card">
                     <div class="chart-title">评分雷达图</div>
                     <div class="chart-container">
@@ -928,7 +928,7 @@
                     DIMENSIONS.forEach(dim => {
                         const score = row.scores[dim];
                         if (score === null || score === undefined) {
-                            html += `<td><span class="score-badge" style="opacity:0.4">N/A</span></td>`;
+                            html += `<td><span class="score-badge" style="opacity:0.4">-</span></td>`;
                         } else {
                             html += `<td><span class="score-badge">${score}</span></td>`;
                         }
@@ -1428,7 +1428,7 @@
         });
         {% endif %}
 
-        {% if has_scores and score_summary %}
+        {% if has_scores and has_score_averages %}
         // 评分雷达图
         const scoreLabels = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
