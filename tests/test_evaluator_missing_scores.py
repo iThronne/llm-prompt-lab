@@ -8,6 +8,7 @@ from src.evaluator import (
     _is_empty_response,
     _parse_judge_output,
 )
+from src.reporter import _extract_response_text as _extract_report_response_text
 
 
 DIMENSIONS = ["relevance", "timeliness", "overall"]
@@ -22,6 +23,8 @@ class MissingScoreTests(unittest.TestCase):
             {"choices": [{"message": {"content": None}}]},
             {"choices": [{"message": {"content": ""}}]},
             {"choices": [{"message": {"content": " \n\t"}}]},
+            {"choices": [{"message": {"content": "None"}}]},
+            {"choices": [{"message": {"content": " none \n"}}]},
         ]
         for response in empty_responses:
             with self.subTest(response=response):
@@ -32,6 +35,12 @@ class MissingScoreTests(unittest.TestCase):
 
         self.assertFalse(_is_empty_response(response))
         self.assertEqual(_extract_response_text(response), " answer ")
+
+    def test_none_string_is_preserved_for_reports(self):
+        response = {"choices": [{"message": {"content": "None"}}]}
+
+        self.assertTrue(_is_empty_response(response))
+        self.assertEqual(_extract_report_response_text(response), "None")
 
     def test_build_skipped_score_uses_null_dimensions(self):
         result = {"row_index": 7, "query": "q", "response": None}

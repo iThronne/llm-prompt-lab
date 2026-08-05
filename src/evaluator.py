@@ -318,8 +318,9 @@ def _extract_response_text(response: dict) -> str:
 
 
 def _is_empty_response(response: dict | None) -> bool:
-    """判断候选模型回复是否为 None、缺失或仅含空白字符。"""
-    return not _extract_response_text(response).strip()
+    """判断候选模型回复是否为空，或为 API 使用的字符串 ``None`` 占位值。"""
+    content = _extract_response_text(response).strip()
+    return not content or content.casefold() == "none"
 
 
 def _build_skipped_score(result: dict, dimensions: list[str]) -> dict:
