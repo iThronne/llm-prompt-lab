@@ -39,6 +39,7 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
             {"row_index": 3, "relevance": None, "overall": None, "analysis": ""},
         ]
         summary = {
+            "judge_model": "qwen3.7-max",
             "dimensions": ["relevance", "overall"],
             "summary": {
                 "avg_relevance": 4,
@@ -52,6 +53,27 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
         self._write_jsonl(self.run_dir / "scores.jsonl", scores)
         (self.run_dir / "summary.json").write_text(
             json.dumps(summary, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        eval_meta = {
+            "eval_config_hash": "judge123",
+            "judge": {
+                "model": {
+                    "provider": "ali",
+                    "model": "qwen3.7-max",
+                    "base_url": "https://judge.example/v1",
+                    "api_key_env": "PRIVATE_JUDGE_KEY",
+                    "temperature": 0,
+                    "top_p": 1,
+                    "seed": 7,
+                    "max_tokens": 4096,
+                    "extra_body": {"enable_search": True},
+                },
+                "prompt": "PRIVATE JUDGE PROMPT",
+            },
+        }
+        (self.run_dir / "eval_meta.json").write_text(
+            json.dumps(eval_meta, ensure_ascii=False),
             encoding="utf-8",
         )
 
@@ -81,6 +103,14 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
         self.assertIn("相关性（4分）", html)
         self.assertIn("综合（3分）", html)
         self.assertIn("scoreRadarChart.update()", html)
+        self.assertIn(
+            "dim => scoreDimensionLabel(dim, scoreStatistics)",
+            html,
+        )
+        self.assertIn(
+            ".map(d => `${DIM_NAMES[d] || d}（${SCORE_SUMMARY['avg_' + d]}分）`)",
+            html,
+        )
         self.assertIn("rowHasNumericScore(row)", html)
 
         node = shutil.which("node")
@@ -94,6 +124,31 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_report_shows_safe_judge_snapshot_at_top(self):
+        with patch("src.reporter.RESULTS_DIR", self.results_dir):
+            report_path = generate_html_report(self.run_name)
+
+        html = report_path.read_text(encoding="utf-8")
+        self.assertIn('aria-label="Judge 模型信息"', html)
+        self.assertIn("qwen3.7-max", html)
+        self.assertIn("供应商：ali", html)
+        self.assertIn("评测配置：judge123", html)
+        self.assertIn("Temperature", html)
+        self.assertIn("联网核验", html)
+        self.assertIn("开启", html)
+        self.assertNotIn("PRIVATE_JUDGE_KEY", html)
+        self.assertNotIn("https://judge.example/v1", html)
+        self.assertNotIn("PRIVATE JUDGE PROMPT", html)
+
+    def test_legacy_summary_falls_back_to_judge_model_name(self):
+        (self.run_dir / "eval_meta.json").unlink()
+        with patch("src.reporter.RESULTS_DIR", self.results_dir):
+            report_path = generate_html_report(self.run_name)
+
+        html = report_path.read_text(encoding="utf-8")
+        self.assertIn("qwen3.7-max", html)
+        self.assertIn("历史结果未保存完整 Judge 配置快照", html)
 
 
 if __name__ == "__main__":

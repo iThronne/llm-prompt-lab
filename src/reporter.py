@@ -205,6 +205,54 @@ def _short_report_name(run_name: str) -> str:
     return run_name
 
 
+def _build_judge_info(summary: dict | None, eval_meta: dict | None) -> dict | None:
+    """从评测快照提取可安全展示的 Judge 信息，兼容旧版 summary。"""
+    summary = summary or {}
+    eval_meta = eval_meta or {}
+    judge_snapshot = eval_meta.get("judge", {})
+    model_snapshot = {}
+    if isinstance(judge_snapshot, dict):
+        nested_model = judge_snapshot.get("model")
+        if isinstance(nested_model, dict):
+            # 当前 eval_meta 格式：judge 是完整 EvalConfig，model 为模型配置。
+            model_snapshot = nested_model
+        elif isinstance(nested_model, str):
+            # 兼容可能直接保存 ModelConfig 的旧格式。
+            model_snapshot = judge_snapshot
+
+    model_name = model_snapshot.get("model") or summary.get("judge_model")
+    if not model_name:
+        return None
+
+    parameter_specs = (
+        ("temperature", "Temperature"),
+        ("top_p", "Top P"),
+        ("seed", "Seed"),
+        ("max_tokens", "Max Tokens"),
+    )
+    parameters = []
+    for key, label in parameter_specs:
+        if key in model_snapshot and model_snapshot[key] is not None:
+            parameters.append({"label": label, "value": str(model_snapshot[key])})
+
+    extra_body = model_snapshot.get("extra_body")
+    if isinstance(extra_body, dict) and "enable_search" in extra_body:
+        search_enabled = extra_body["enable_search"]
+        if isinstance(search_enabled, bool):
+            search_value = "开启" if search_enabled else "关闭"
+        else:
+            search_value = str(search_enabled)
+        parameters.append({"label": "联网核验", "value": search_value})
+
+    return {
+        "model": str(model_name),
+        "provider": str(model_snapshot.get("provider", "")),
+        "eval_config_hash": str(eval_meta.get("eval_config_hash", "")),
+        "parameters": parameters,
+        "has_snapshot": bool(model_snapshot),
+    }
+
+
 def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     """生成 HTML 报告。
 
@@ -219,6 +267,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     responses_path = result_dir / "responses.jsonl"
     scores_path = result_dir / "scores.jsonl"
     summary_path = result_dir / "summary.json"
+    eval_meta_path = result_dir / "eval_meta.json"
 
     if not responses_path.exists():
         raise FileNotFoundError(f"No results for '{run_name}' at {responses_path}")
@@ -232,6 +281,12 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     if summary_path.exists():
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
+
+    eval_meta = None
+    if eval_meta_path.exists():
+        with open(eval_meta_path, encoding="utf-8") as f:
+            eval_meta = json.load(f)
+    judge_info = _build_judge_info(summary, eval_meta)
 
     # 维度名称映射（英文到中文）
     dim_name_map = {
@@ -317,6 +372,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
     template = env.get_template("report.html")
     html = template.render(
         run_name=run_name,
+        judge_info=judge_info,
         stats=stats,
         rows=rows_data,
         score_summary=score_summary,

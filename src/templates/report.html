@@ -31,6 +31,80 @@
             color: #666;
             margin-bottom: 24px;
         }
+        .judge-info-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            margin-top: -8px;
+            margin-bottom: 24px;
+            padding: 16px 20px;
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #f8fbff 0%, #f5f3ff 100%);
+            box-shadow: 0 1px 3px rgba(30, 64, 175, 0.08);
+        }
+        .judge-info-main {
+            min-width: 220px;
+        }
+        .judge-info-kicker {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .judge-info-name {
+            margin-top: 2px;
+            color: #172554;
+            font-size: 20px;
+            font-weight: 650;
+            word-break: break-word;
+        }
+        .judge-info-source {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 14px;
+            margin-top: 3px;
+            color: #64748b;
+            font-size: 12px;
+        }
+        .judge-params {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .judge-param {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 5px;
+            padding: 5px 9px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: #64748b;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .judge-param strong {
+            color: #334155;
+            font-weight: 600;
+        }
+        .judge-info-legacy {
+            color: #94a3b8;
+            font-size: 12px;
+        }
+        @media (max-width: 760px) {
+            .judge-info-card {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .judge-params {
+                justify-content: flex-start;
+            }
+        }
 
         /* Stats Cards */
         .stats-grid {
@@ -655,6 +729,28 @@
         <h1>实验报告</h1>
         <div class="subtitle">{{ run_name }}</div>
 
+        {% if judge_info %}
+        <section class="judge-info-card" aria-label="Judge 模型信息">
+            <div class="judge-info-main">
+                <div class="judge-info-kicker">Judge 模型</div>
+                <div class="judge-info-name">{{ judge_info.model }}</div>
+                <div class="judge-info-source">
+                    {% if judge_info.provider %}<span>供应商：{{ judge_info.provider }}</span>{% endif %}
+                    {% if judge_info.eval_config_hash %}<span>评测配置：{{ judge_info.eval_config_hash }}</span>{% endif %}
+                </div>
+            </div>
+            {% if judge_info.parameters %}
+            <div class="judge-params">
+                {% for parameter in judge_info.parameters %}
+                <span class="judge-param"><span>{{ parameter.label }}</span><strong>{{ parameter.value }}</strong></span>
+                {% endfor %}
+            </div>
+            {% elif not judge_info.has_snapshot %}
+            <div class="judge-info-legacy">历史结果未保存完整 Judge 配置快照</div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         <!-- Stats Cards -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -943,7 +1039,9 @@
 
             const chartDimensions = DIMENSIONS.filter(dim => scoreStatistics[dim].average !== null);
             if (scoreRadarChart) {
-                scoreRadarChart.data.labels = chartDimensions.map(dim => DIM_NAMES[dim] || dim);
+                scoreRadarChart.data.labels = chartDimensions.map(
+                    dim => scoreDimensionLabel(dim, scoreStatistics)
+                );
                 scoreRadarChart.data.datasets[0].data = chartDimensions.map(dim => scoreStatistics[dim].average);
                 scoreRadarChart.update();
             }
@@ -1635,7 +1733,7 @@
         // 评分雷达图
         const scoreLabels = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
-            .map(d => DIM_NAMES[d] || d);
+            .map(d => `${DIM_NAMES[d] || d}（${SCORE_SUMMARY['avg_' + d]}分）`);
         const scoreValues = DIMENSIONS
             .filter(d => SCORE_SUMMARY['avg_' + d] !== undefined)
             .map(d => SCORE_SUMMARY['avg_' + d]);
