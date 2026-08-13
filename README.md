@@ -451,6 +451,8 @@ python -m src.cli import my_dataset
 
 评分标准详见 `config/prompts/judge-prompt.md`。
 
+其中 `search_planning`、`search_relevance`、`search_utilization` 是搜索辅助诊断维度，不直接参与或封顶 `overall`。搜索过程只有在实际影响最终回复时，才通过相关性、事实性、实时性、本地化等回答质量维度反映到综合评分；未传导到最终回复的搜索过程缺陷不会降低综合分。
+
 统计采用“有效值”口径：候选模型返回 `None`、字符串 `"None"`（忽略大小写及首尾空白）、缺失内容或纯空白时，该条回复会被标记为跳过，不调用 Judge，也不进入任何评分统计；原始回复仍会保留在 HTML/Excel 中，各评分显示为 `-`。某个维度不适用时保存为 JSON `null`，在 HTML/Excel 中显示为 `-`，并从该维度均值的分母中排除。`summary.json` 中的 `count_<dimension>` 记录各维度实际参与统计的样本数。
 
 #### 实时性评测

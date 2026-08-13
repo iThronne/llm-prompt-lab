@@ -29,7 +29,21 @@ class JudgePromptTests(unittest.TestCase):
     def test_defines_missing_factuality_and_search_result_reliability(self):
         self.assertIn("不包含任何可客观核查的事实陈述", self.prompt)
         self.assertIn("来源可靠性，以及关键内容能否通过外部核验", self.prompt)
-        self.assertIn("任一适用维度为 2 分时，overall 不得超过 2", self.prompt)
+        self.assertIn("任一适用的回答质量维度为 2 分时，overall 不得超过 2", self.prompt)
+
+    def test_search_diagnostics_do_not_directly_affect_overall(self):
+        self.assertIn(
+            "`overall` 只根据这些维度及最终回复的实际可用性确定",
+            self.prompt,
+        )
+        self.assertIn(
+            "`search_planning`、`search_relevance`、`search_utilization`",
+            self.prompt,
+        )
+        self.assertIn("不直接参与 `overall`", self.prompt)
+        self.assertIn("如果删去三个搜索辅助诊断维度的分数和分析，overall 应保持不变", self.prompt)
+        self.assertIn('"search_relevance": 2, "search_utilization": 5, "overall": 5', self.prompt)
+        self.assertNotIn("任一适用维度为 2 分时，overall 不得超过 2", self.prompt)
 
     def test_search_planning_scores_search_decision_even_without_search(self):
         start = self.prompt.index("### 搜索规划 (search_planning)")
