@@ -469,6 +469,7 @@ python -m src.cli import my_dataset
 - Judge 仅在核验关键事实、候选搜索结果准确性和实时性时联网，并固定 Query 时间基准与来源优先级；同一 run 的后续 `eval` 复用已有评分
 - Judge prompt 作为 system 消息，待评测内容作为 user 消息，支持 prompt cache
 - 要求 Judge 按维度输出可核查的判定依据，并只评价可观察证据，不推测隐藏推理链
+- 候选模型发生联网搜索时，Judge 额外输出独立的 `answer_trace`：按“检索 → 证据 → 筛选 → 结论映射”展示可观察的答案形成路径；它不等同于隐藏思维链，也不参与评分
 - 以 3 分为合格基准，4/5 分必须有具体证据；5 分仅用于逐项核查后无可识别缺陷的回复，避免 Judge 高分偏置
 - 评测本身也支持断点续评，已评分条目不会重复调用 Judge 模型
 - 失败时采用指数退避重试
@@ -504,7 +505,7 @@ python -m src.cli eval --force
   - Token 用量柱状图
 - **数据表格**：
   - 可搜索、可分页
-  - 点击行展开查看完整 query / response / reasoning / 评分分析；评分分析旁可查看并复制实际发送的完整 API 请求 JSON
+  - 点击行展开查看完整 query / response / reasoning / 搜索信息 / 答案形成路径 / 评分分析；评分分析旁可查看并复制实际发送的完整 API 请求 JSON
   - 使用 `report <run_name> --serve` 后，可从评分分析旁的“追问”按钮打开聊天面板；自动携带评分标准和当前 case 上下文，回答按 token 流式显示并保存到 `qa.jsonl`
   - 支持按评分维度筛选和排序
 

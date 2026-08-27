@@ -90,8 +90,9 @@ def _select_low_score_samples(
             "overall": overall,
             "scores": {
                 k: v for k, v in score.items()
-                if k not in ("row_index", "query", "response_summary", "error", "analysis")
+                if k not in ("row_index", "query", "response_summary", "error", "analysis", "answer_trace")
             },
+            "answer_trace": score.get("answer_trace"),
             "analysis": score.get("analysis", ""),
             "rendered_system": _extract_rendered_system(r.get("rendered_request")),
         })
@@ -183,6 +184,8 @@ def _build_advise_user_content(
         parts.append(f"- query：{s['query']}")
         score_line = ", ".join(f"{k}={v}" for k, v in s["scores"].items())
         parts.append(f"- 各维度分数：{score_line}")
+        if s.get("answer_trace"):
+            parts.append(f"- 答案形成路径（基于可观察证据）：{s['answer_trace']}")
         parts.append(f"- response：\n\n{s['response']}")
         parts.append(f"- 评测分析：\n\n{s['analysis']}")
         parts.append("")

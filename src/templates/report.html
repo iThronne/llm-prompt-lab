@@ -1282,6 +1282,13 @@
                                 <div class="expand-text" id="search-${row.row_index}">${escapeHtmlWithNewlines(row.search_results)}</div>
                             </div>
                             ` : ''}
+                            ${row.answer_trace ? `
+                            <div class="expand-section">
+                                <button class="copy-btn" onclick="copyText(this, 'answer-trace-${row.row_index}')">复制</button>
+                                <div class="expand-label">答案形成路径（基于可观察证据）</div>
+                                <div class="expand-text" id="answer-trace-${row.row_index}">${escapeHtmlWithNewlines(row.answer_trace)}</div>
+                            </div>
+                            ` : ''}
                             ${row.analysis ? `
                             <div class="expand-section">
                                 <button class="copy-btn" onclick="copyText(this, 'analysis-${row.row_index}')">复制</button>

@@ -28,7 +28,7 @@ from src.reporter import (
 )
 
 
-ASK_SYSTEM_PROMPT = """你是一位严谨的 AI 回复评测复盘助手。用户会提供一次评测中某个 case 的完整上下文：评分标准（Judge Prompt）、候选模型实际收到的 System Prompt、用户 Query、候选模型回复、（如有）推理过程 / 搜索词 / 搜索结果、各维度分数与评测分析，以及此前就该 case 的多轮追问记录。
+ASK_SYSTEM_PROMPT = """你是一位严谨的 AI 回复评测复盘助手。用户会提供一次评测中某个 case 的完整上下文：评分标准（Judge Prompt）、候选模型实际收到的 System Prompt、用户 Query、候选模型回复、（如有）推理过程 / 搜索词 / 搜索结果 / 基于可观察证据的答案形成路径、各维度分数与评测分析，以及此前就该 case 的多轮追问记录。
 
 你的任务是：基于上述上下文，回答用户对该 case 的追问。常见追问包括：
 - 解释某个维度为何得此分数、判定依据是什么
@@ -51,7 +51,7 @@ def _build_case_context(row: dict, score: dict, judge_prompt: str) -> str:
     rendered_request = row.get("rendered_request")
     score_dims = {
         k: v for k, v in score.items()
-        if k not in ("row_index", "query", "response_summary", "error", "analysis")
+        if k not in ("row_index", "query", "response_summary", "error", "analysis", "answer_trace")
     }
 
     sections = [
@@ -74,6 +74,10 @@ def _build_case_context(row: dict, score: dict, judge_prompt: str) -> str:
     search_results = _extract_search_results(rendered_request)
     if search_results:
         sections.append("### 搜索结果\n" + search_results)
+
+    answer_trace = score.get("answer_trace")
+    if answer_trace:
+        sections.append("### 答案形成路径（基于可观察证据）\n" + answer_trace)
 
     if score_dims:
         score_line = ", ".join(f"{k}={v}" for k, v in score_dims.items())

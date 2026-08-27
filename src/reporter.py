@@ -325,10 +325,11 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
             "latency_ms": r.get("latency_ms"),
             "ttft_ms": r.get("ttft_ms"),
             "finish_reason": response.get("choices", [{}])[0].get("finish_reason"),
-            "scores": {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis")},
+            "scores": {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis", "answer_trace")},
+            "answer_trace": score.get("answer_trace"),
             "analysis": _enrich_analysis(
                 score.get("analysis", ""),
-                {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis")},
+                {k: v for k, v in score.items() if k not in ("row_index", "query", "response_summary", "error", "analysis", "answer_trace")},
                 dim_name_map,
                 dim_name_reverse,
             ),

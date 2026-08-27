@@ -49,12 +49,14 @@ class MissingScoreTests(unittest.TestCase):
 
         self.assertEqual(score["error"], "empty_response")
         self.assertEqual(score["analysis"], "候选模型回复为空，已跳过评测。")
+        self.assertIsNone(score["answer_trace"])
         self.assertTrue(all(score[dimension] is None for dimension in DIMENSIONS))
 
     def test_parse_judge_output_accepts_null_and_normalizes_dash(self):
         content = json.dumps(
             {
                 "analysis": "相关性（4分）：有效\n实时性（-）：不适用\n综合（4分）：良好",
+                "answer_trace": None,
                 "relevance": 4,
                 "timeliness": "-",
                 "overall": 4,
@@ -74,6 +76,7 @@ class MissingScoreTests(unittest.TestCase):
                 content = json.dumps(
                     {
                         "analysis": "invalid",
+                        "answer_trace": None,
                         "relevance": invalid_score,
                         "timeliness": None,
                         "overall": 4,
@@ -81,6 +84,25 @@ class MissingScoreTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(ValueError, "relevance"):
                     _parse_judge_output(content, DIMENSIONS)
+
+    def test_parse_judge_output_validates_answer_trace(self):
+        base = {
+            "analysis": "valid",
+            "relevance": 4,
+            "timeliness": None,
+            "overall": 4,
+        }
+
+        with self.assertRaisesRegex(ValueError, "answer_trace"):
+            _parse_judge_output(json.dumps(base), DIMENSIONS)
+
+        base["answer_trace"] = ["not", "a", "string"]
+        with self.assertRaisesRegex(ValueError, "answer_trace"):
+            _parse_judge_output(json.dumps(base), DIMENSIONS)
+
+        base["answer_trace"] = "检索：query → 证据：[1] → 结论映射：结论由[1]支持"
+        parsed = _parse_judge_output(json.dumps(base, ensure_ascii=False), DIMENSIONS)
+        self.assertEqual(parsed["answer_trace"], base["answer_trace"])
 
     def test_compute_summary_excludes_skipped_rows_and_null_dimensions(self):
         scores = [

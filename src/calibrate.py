@@ -136,7 +136,13 @@ def generate_calibration_report(run_name: str) -> Path:
 
 def _detect_dimensions(scores: dict[int, dict]) -> list[str]:
     for s in scores.values():
-        dims = [k for k in s if k not in ("row_index", "query", "response_summary", "error")]
+        dims = [
+            k for k in s
+            if k not in (
+                "row_index", "query", "response_summary", "error",
+                "analysis", "answer_trace",
+            )
+        ]
         if dims:
             return dims
     return []

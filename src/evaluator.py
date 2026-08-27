@@ -328,6 +328,7 @@ def _build_skipped_score(result: dict, dimensions: list[str]) -> dict:
         "response_summary": "",
         "error": "empty_response",
         "analysis": "候选模型回复为空，已跳过评测。",
+        "answer_trace": None,
         **{dim: None for dim in dimensions},
     }
 
@@ -416,15 +417,23 @@ def _parse_judge_output(content: str, dimensions: list[str]) -> dict:
         except json.JSONDecodeError as e:
             raise ValueError(f"无法解析 Judge 输出为 JSON: {e} | 内容: {content[:300]}")
 
-    # 校验必需字段：analysis + 所有评分维度
+    # 校验必需字段：analysis、可观察答案形成路径 + 所有评分维度
     missing = []
     if "analysis" not in parsed:
         missing.append("analysis")
+    if "answer_trace" not in parsed:
+        missing.append("answer_trace")
     for dim in dimensions:
         if dim not in parsed:
             missing.append(dim)
     if missing:
         raise ValueError(f"Judge 输出缺少必需字段: {missing}")
+
+    answer_trace = parsed["answer_trace"]
+    if answer_trace is not None and not isinstance(answer_trace, str):
+        raise ValueError(
+            f"Judge 输出 answer_trace 的值无效: {answer_trace!r}（应为字符串或 null）"
+        )
 
     # 不适用维度使用 null；兼容模型偶尔按展示约定返回的 "-"。
     for dim in dimensions:

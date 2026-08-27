@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.calibrate import _detect_dimensions
 from src.reporter import generate_html_report
 
 
@@ -34,7 +35,7 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
             for row_index in (1, 2, 3)
         ]
         scores = [
-            {"row_index": 1, "relevance": 5, "overall": 4, "analysis": ""},
+            {"row_index": 1, "relevance": 5, "overall": 4, "analysis": "", "answer_trace": "检索 → [1] → 回答"},
             {"row_index": 2, "relevance": 3, "overall": 2, "analysis": ""},
             {"row_index": 3, "relevance": None, "overall": None, "analysis": ""},
         ]
@@ -112,6 +113,8 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
             html,
         )
         self.assertIn("rowHasNumericScore(row)", html)
+        self.assertIn("答案形成路径（基于可观察证据）", html)
+        self.assertIn("row.answer_trace", html)
 
         node = shutil.which("node")
         if node:
@@ -149,6 +152,19 @@ class ReportStatisticsExclusionsTest(unittest.TestCase):
         html = report_path.read_text(encoding="utf-8")
         self.assertIn("qwen3.7-max", html)
         self.assertIn("历史结果未保存完整 Judge 配置快照", html)
+
+    def test_answer_trace_is_not_detected_as_a_score_dimension(self):
+        dimensions = _detect_dimensions({
+            1: {
+                "row_index": 1,
+                "analysis": "评分分析",
+                "answer_trace": "检索 → [1] → 回答",
+                "relevance": 5,
+                "overall": 4,
+            },
+        })
+
+        self.assertEqual(dimensions, ["relevance", "overall"])
 
 
 if __name__ == "__main__":

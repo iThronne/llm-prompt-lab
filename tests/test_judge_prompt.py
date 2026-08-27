@@ -26,6 +26,14 @@ class JudgePromptTests(unittest.TestCase):
         self.assertIn("不要输出或推测隐藏推理链", self.prompt)
         self.assertNotIn("推理链推断", self.prompt)
 
+    def test_adds_observable_answer_trace_without_hidden_reasoning(self):
+        self.assertIn("## 可观察的答案形成路径", self.prompt)
+        self.assertIn("`answer_trace`", self.prompt)
+        self.assertIn("检索 → 证据 → 筛选 → 结论映射", self.prompt)
+        self.assertIn("无可观察来源", self.prompt)
+        self.assertIn("不得直接影响任何维度分数或 `overall`", self.prompt)
+        self.assertIn("不得与 `answer_trace` 混为一谈", self.prompt)
+
     def test_defines_missing_factuality_and_search_result_reliability(self):
         self.assertIn("不包含任何可客观核查的事实陈述", self.prompt)
         self.assertIn("来源可靠性，以及关键内容能否通过外部核验", self.prompt)
