@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>回答问题归因报告</title>
+<style>
+:root{color-scheme:light;--ink:#203148;--muted:#596b80;--line:#dce5ee;--accent:#215fa1}
+*{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:var(--ink);font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif}
+main{max-width:1250px;margin:auto;padding:32px 24px}h1{font-size:29px;margin:0}h2{font-size:21px}h3{font-size:17px}h4{margin-bottom:8px}
+.muted,small{color:var(--muted)}.panel,.case{background:white;border:1px solid var(--line);border-radius:10px;padding:20px;margin:18px 0}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;position:sticky;top:0;z-index:2;background:#f4f7fb;padding:12px 0}
+label{display:flex;flex-direction:column;gap:4px}input,select{padding:9px;border:1px solid #b8c8d9;border-radius:6px;background:white;max-width:100%}
+input{min-width:240px}summary{cursor:pointer;overflow-wrap:anywhere}summary strong{color:var(--accent)}.case-title{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+p,li,td,blockquote{overflow-wrap:anywhere;white-space:pre-wrap}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:14px/1.6 ui-monospace,monospace;background:#f4f7fb;padding:14px;border-radius:6px}
+blockquote{border-left:3px solid var(--accent);margin:8px 0;padding:10px 16px;background:#f3f7fc}.factor,.evidence{border-top:1px solid var(--line);padding:14px 0}
+a{color:var(--accent)}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid var(--line);padding:9px;vertical-align:top}th{background:#edf3fa}
+.table-scroll{overflow:auto}.source:target,.evidence:target{outline:3px solid #d5a52c;scroll-margin-top:120px}.translation{color:#35506d}.empty{color:var(--muted)}[hidden]{display:none!important}
+@media(max-width:650px){main{padding:18px 12px}.panel,.case{padding:14px}.filters{position:static}input{min-width:180px}}
+</style></head><body><main>
+{% macro refs(ids, cid) %}{% for id in ids %}<a href="#{{ anchor(cid, 'evidence/' ~ id) }}">{{ id }}</a> {% endfor %}{% endmacro %}
+<h1>回答问题归因报告</h1><p class="muted">独立归因 · 仅分析提供材料 · 中文分析与原文证据</p>
+<p>当前源数据 {{ summary.total_cases }} 个案例；执行成功 {{ summary.execution_counts.get('success',0) }}；失败 {{ summary.execution_counts.get('failed',0) }}；未处理或输入已变化 {{ summary.execution_counts.get('not_processed',0) }}。</p>
+<details class="panel"><summary>汇总统计与阅读说明</summary><p>{{ summary.counting_note }}</p><p>优先级 1 为最高；相同优先级为并列；“未定”表示无法可靠排序。中文概要及释义仅辅助阅读。完整结果保存在同目录 attributions.jsonl，按 Case ID 和输入摘要定位最新匹配记录。</p>
+<div class="table-scroll"><table><thead><tr><th>统计口径</th><th>项目</th><th>数量</th></tr></thead><tbody>{% for row in stats %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></details>
+<div class="filters"><label>查找案例或内容<input id="search" type="search" placeholder="Case ID、关键词"></label>
+<label>问题环节<select id="stage"><option value="">全部环节</option>{% for key,name in stages.items() %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
+<label>归因状态<select id="status"><option value="">全部状态</option>{% for key,name in statuses.items() %}<option value="{{ key }}">{{ name }}</option>{% endfor %}<option value="failed">执行失败</option><option value="not_processed">未处理/输入已变化</option></select></label>
+<label>具体问题类型<input id="type" type="search" placeholder="问题类型关键词"></label><span id="count"></span></div>
+{% for record in records %}{% set r = record.result %}{% set cid = record.case_id %}
+<details class="case" data-stage="{{ r.factors|map(attribute='stage')|join(' ') if r else '' }}" data-type="{{ r.factors|map(attribute='problem_type')|join(' ') if r else '' }}" data-status="{{ r.status if r else record.execution.status }}">
+<summary><div class="case-title"><strong>{{ cid }}</strong><span>{{ label(r.status if r else record.execution.status) }} · {{ r.factors|length if r else 0 }} 个因素</span></div>
+<p>{{ (r.content_summaries_zh.query if r and r.content_summaries_zh.query else record.input_snapshot.query)|truncate(200) }}</p>
+{% if r %}<p>{{ r.summary }}</p>{% endif %}</summary>
+{% if record.input_quality %}<h3>材料完整性</h3><ul>{% for item in record.input_quality %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+{% if record.execution.error %}<p>执行错误：{{ record.execution.error }}</p>{% endif %}
+{% if r %}
+<h3>回答问题</h3>{% for issue in r.issues %}<p><b>{{ issue.id }} · {{ label(issue.impact_level) }}</b> {{ issue.description }} {{ refs(issue.evidence_ids,cid) }}</p>{% else %}<p class="empty">未确认材料可支持的回答缺陷。</p>{% endfor %}
+<h3>影响因素</h3>{% for factor in sorted_factors(r.factors) %}<section class="factor"><h4>{{ factor.id }} · {{ label(factor.stage) }} · 优先级 {{ factor.priority if factor.priority is not none else '未定' }}{% if factor.id in r.primary_factor_ids %} · 主要因素{% endif %}</h4>
+<p><b>{{ factor.description }}</b></p><p>问题类型：{{ factor.problem_type }}；{{ label(factor.impact_level) }}；{{ label(factor.evidence_strength) }}；影响问题：{{ factor.issue_ids|join('、') }}</p>
+<p>作用机制：{{ factor.mechanism }}</p><p>排序依据：{{ factor.ranking_reason }}</p><p>证据：{{ refs(factor.evidence_ids,cid) }}</p><p>改进建议：{{ factor.fix.action }}</p><p>验证方法：{{ factor.fix.validation }}</p></section>{% else %}<p class="empty">未确认实际影响因素。</p>{% endfor %}
+<h3>原文证据</h3>{% for e in r.evidence %}<section class="evidence" id="{{ anchor(cid,'evidence/' ~ e.id) }}"><b>{{ e.id }} · {{ e.source_language }}</b><blockquote>{{ e.quote }}</blockquote>{% if e.translation_zh %}<p class="translation">中文释义：{{ e.translation_zh }}</p>{% endif %}{% if e.translation_note %}<p>翻译说明：{{ e.translation_note }}</p>{% endif %}<a href="#{{ anchor(cid,e.path) }}">查看原文：{{ e.path }}</a></section>{% else %}<p class="empty">无证据摘录。</p>{% endfor %}
+<h3>人工评论核对</h3>{% for n in r.note_assessment %}<p><b>{{ label(n.assessment) }}</b> · {{ n.claim }}</p><p>{{ n.reason }} {{ refs(n.evidence_ids,cid) }}</p>{% else %}<p class="empty">未提供人工评论。</p>{% endfor %}
+<h3>各环节检查</h3>{% for c in r.stage_checks %}<p><b>{{ label(c.stage) }} · {{ label(c.status) }}</b>：{{ c.finding }} {{ refs(c.evidence_ids,cid) }}</p>{% endfor %}
+<h3>其他建议项</h3>{% for s in r.suggestions %}<p><b>{{ label(s.stage) }}</b>：{{ s.description }} {{ refs(s.evidence_ids,cid) }}</p><p>建议：{{ s.fix.action }}<br>验证：{{ s.fix.validation }}</p>{% else %}<p class="empty">无。</p>{% endfor %}
+<h3>待确认事项</h3>{% for q in r.open_questions %}<p><b>{{ q.question }}</b></p><p>所需材料：{{ q.needed_material }}<br>判断限制：{{ q.limits }}</p>{% else %}<p class="empty">无。</p>{% endfor %}
+{% if r.content_summaries_zh.answer %}<h3>答复中文概要（辅助阅读）</h3><p>{{ r.content_summaries_zh.answer }}</p>{% endif %}
+{% if r.content_summaries_zh.human_note %}<h3>人工评论中文概要（辅助阅读）</h3><p>{{ r.content_summaries_zh.human_note }}</p>{% endif %}
+{% endif %}
+<details><summary>完整输入与原文定位</summary>{% for leaf in source_leaves(record.input_snapshot) %}<section class="source" id="{{ anchor(cid,leaf.path) }}"><h4>{{ leaf.path }}</h4><pre>{{ leaf.text }}</pre></section>{% endfor %}<details><summary>完整输入 JSON（含结构和非文本字段）</summary><pre>{{ full_json(record.input_snapshot) }}</pre></details></details>
+<details><summary>完整结构化归因记录</summary><pre>{{ full_json(record) }}</pre></details>
+<small>输入摘要：{{ record.input_hash }} · 配置摘要：{{ record.config_hash }}</small>
+</details>{% endfor %}
+</main><script>
+const cases=[...document.querySelectorAll('.case')];
+function filter(){const q=document.getElementById('search').value.toLowerCase(),s=document.getElementById('stage').value,t=document.getElementById('status').value,p=document.getElementById('type').value.toLowerCase();let n=0;for(const c of cases){c.hidden=!!((q&&!c.textContent.toLowerCase().includes(q))||(s&&!c.dataset.stage.split(' ').includes(s))||(t&&c.dataset.status!==t)||(p&&!c.dataset.type.toLowerCase().includes(p)));if(!c.hidden)n++}document.getElementById('count').textContent=`显示 ${n} / ${cases.length} 个案例`}
+for(const id of ['search','stage','status','type'])document.getElementById(id).addEventListener('input',filter);filter();
+function reveal(){const target=document.getElementById(location.hash.slice(1));if(!target)return;let el=target;while(el){if(el.tagName==='DETAILS')el.open=true;el=el.parentElement}target.scrollIntoView({block:'center'})}window.addEventListener('hashchange',reveal);reveal();
+</script></body></html>

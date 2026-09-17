@@ -39,6 +39,38 @@ python -m src.cli eval <run_name> --concurrency 4
 python -m src.cli eval <run_name> --force
 ```
 
+## 独立自动归因
+
+先在 `.env` 设置 `ATTRIBUTION_OPENAI_API_KEY`，在 `config/attribution.yaml` 配置归因模型。
+
+```bash
+# 无需评分，独立分析最新实验并生成 JSONL、HTML、Excel
+python -m src.cli attribute
+
+# 指定实验及案例（row_index 从 0 开始）
+python -m src.cli attribute <run_name> --rows 0 3 8
+
+# 并发；成功且输入未变化的记录自动复用
+python -m src.cli attribute <run_name> --concurrency 4
+
+# 强制重跑选定案例，保留历史版本
+python -m src.cli attribute <run_name> --rows 3 --force
+
+# 不调用模型，仅重建当前归因配置的报告
+python -m src.cli attribute <run_name> --report-only
+
+# 只生成 HTML（完整结果仍保存在 JSONL）
+python -m src.cli attribute <run_name> --format html
+
+# 一次操作分别运行评分与归因，两者互不传递结果
+python -m src.cli eval <run_name> --attribute
+
+# 导入人工评论列；默认 human_note，也兼容 note
+python -m src.cli import data/production.jsonl --name prod-attribution --note-col note
+```
+
+产物位于 `results/<run_name>/attribution/<config_hash>/`。`--report-only` 使用当前配置摘要匹配目录；重建旧配置报告时，使用保存的配置与提示词，通过 `--config-dir` 指定对应配置目录。
+
 ## 导入现网数据
 
 ```bash

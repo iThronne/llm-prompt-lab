@@ -80,6 +80,36 @@ class EvalConfig(BaseModel):
     sanitize: list[SanitizeRule] = Field(default_factory=list)
 
 
+class AttributionConfig(BaseModel):
+    """独立归因配置；不继承或加载 Judge 配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: ModelConfig
+    prompt: str
+    concurrency: int = Field(default=1, ge=1)
+    retries: int = Field(default=2, ge=0, le=10)
+    retry_delay: float = Field(default=2, ge=0, le=30)
+    max_input_chars: int = Field(default=500000, ge=1)
+    search_tool_names: list[str] = Field(default_factory=lambda: [
+        "WebSearch", "web_search", "websearch", "search", "web.run",
+    ])
+    sanitize: list[SanitizeRule] = Field(default_factory=list)
+
+
+class AttributionConfigLoader:
+    def __init__(self, config_dir: Optional[Path] = None):
+        base = config_dir or CONFIG_DIR
+        path = base / "attribution.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.config = AttributionConfig(**data)
+        prompt_path = base / "prompts" / self.config.prompt
+        self.config.prompt = prompt_path.read_text(encoding="utf-8")
+
+    def get_attribution(self) -> AttributionConfig:
+        return self.config
+
+
 class AdviseConfig(BaseModel):
     """优化建议配置（读 run 结果 → 建议），从 advise.yaml 加载。
 

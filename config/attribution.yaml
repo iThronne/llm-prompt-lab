@@ -1,0 +1,22 @@
+# 独立归因配置，不读取 eval.yaml；不启用联网或工具。
+model:
+  provider: ali
+  model: qwen3.7-max
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  api_key_env: ATTRIBUTION_OPENAI_API_KEY
+  temperature: 0
+  top_p: 1
+  seed: 7
+  max_tokens: 12000
+  extra_body:
+    enable_search: false
+prompt: attribution-prompt.md
+concurrency: 1
+retries: 2
+retry_delay: 2
+# 包括提示词、JSON Schema 和输入；超过上限会记录失败，不截断。
+max_input_chars: 500000
+# 精确匹配（忽略大小写）；按实际数据中的 function.name 补充。
+search_tool_names: [WebSearch, web_search, websearch, search, web.run]
+# 独立配置；递归覆盖 Query、Answer、messages 和人工评论中的字符串。
+sanitize: []

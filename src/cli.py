@@ -24,7 +24,8 @@ load_dotenv()
 from src.advisor import run_advise
 from src.asker import run_ask, run_ask_interactive
 from src.calibrate import generate_calibration_report
-from src.config import ExperimentConfigLoader, EvalConfigLoader, AdviseConfigLoader
+from src.config import ExperimentConfigLoader, EvalConfigLoader, AdviseConfigLoader, AttributionConfigLoader
+from src.attribution import run_attribution
 from src.constants import RESULTS_DIR
 from src.evaluator import run_evaluation
 from src.experiment import run_experiment
@@ -57,6 +58,23 @@ def _resolve_run_name(run_name: str | None) -> str | None:
     return run_name
 
 
+async def _run_both(run_name: str, concurrency: int, force: bool):
+    """配置加载及执行也分别隔离，某一流程失败不阻止另一流程。"""
+    async def evaluate():
+        config = EvalConfigLoader().get_eval()
+        return await run_evaluation(run_name, config, concurrency=concurrency, force=force)
+
+    async def attribute():
+        config = AttributionConfigLoader().get_attribution()
+        return await run_attribution(run_name, config)
+
+    outcomes = await asyncio.gather(evaluate(), attribute(), return_exceptions=True)
+    for name, outcome in zip(("eval", "attribute"), outcomes):
+        if isinstance(outcome, Exception):
+            print(f"[error] {name} 执行失败: {outcome}")
+    return outcomes
+
+
 def main():
     parser = argparse.ArgumentParser(prog="llm-lab", description="LLM Prompt Lab — 大模型 API 实验框架")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -69,6 +87,16 @@ def main():
     eval_p.add_argument("run", nargs="?", help="run 名称（可选，默认为最新的实验）")
     eval_p.add_argument("--concurrency", "-c", type=int, default=1, help="并发评测数（默认 1，即串行）")
     eval_p.add_argument("--force", action="store_true", help="评测配置变更时强制重新评测（清空旧结果）")
+    eval_p.add_argument("--attribute", action="store_true", help="同时独立执行归因（不读取评分结果）")
+
+    attribute_p = sub.add_parser("attribute", help="独立归因并生成 JSONL/HTML/Excel，无需评分")
+    attribute_p.add_argument("run", nargs="?", help="run 名称（默认最新实验）")
+    attribute_p.add_argument("--rows", type=int, nargs="+", help="仅分析指定 row_index，默认全量")
+    attribute_p.add_argument("--concurrency", "-c", type=int, help="并发数（默认 attribution.yaml）")
+    attribute_p.add_argument("--force", action="store_true", help="重新归因选定案例；保留历史记录")
+    attribute_p.add_argument("--report-only", action="store_true", help="不调用模型，重建当前配置报告")
+    attribute_p.add_argument("--format", nargs="+", choices=["html", "xlsx"], default=["html", "xlsx"], help="报告格式（JSONL 始终保存）")
+    attribute_p.add_argument("--config-dir", type=Path, help="归因配置目录（含 attribution.yaml 和 prompts/）")
 
     import_p = sub.add_parser("import", help="从 Excel/JSONL 导入已有数据（用于评测现网数据）")
     import_p.add_argument("data", help="数据文件路径（.xlsx/.jsonl/.csv）")
@@ -76,6 +104,7 @@ def main():
     import_p.add_argument("--query-col", default="query", help="Query 列名（默认 query）")
     import_p.add_argument("--response-col", default="response", help="模型回答列名（默认 response）")
     import_p.add_argument("--api-json-col", default="api_json", help="api_json 列名（默认 api_json）")
+    import_p.add_argument("--note-col", default="human_note", help="人工评论列（默认 human_note，缺失时兼容 note）")
 
     sub.add_parser("show", help="查看结果摘要").add_argument("run", help="run 名称（YAML key 或自动生成名）")
 
@@ -115,23 +144,40 @@ def main():
             print(f"[done] responses.xlsx 已导出 → {path}")
         except Exception as e:
             print(f"[warn] responses.xlsx 导出失败: {e}")
+    elif args.command == "attribute":
+        if args.report_only and args.force:
+            parser.error("--report-only 与 --force 不能同时使用")
+        if args.concurrency is not None and args.concurrency < 1:
+            parser.error("--concurrency 必须大于 0")
+        run_name = _resolve_run_name(args.run)
+        if not run_name:
+            return
+        try:
+            cfg = AttributionConfigLoader(args.config_dir).get_attribution()
+            if args.concurrency is not None:
+                cfg.concurrency = args.concurrency
+            asyncio.run(run_attribution(run_name, cfg, rows=args.rows, force=args.force,
+                                       report_only=args.report_only, formats=tuple(args.format)))
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            parser.exit(1, f"[error] {exc}\n")
     elif args.command == "eval":
         run_name = _resolve_run_name(args.run)
         if not run_name:
             return
 
-        try:
-            loader = EvalConfigLoader()
-            eval_cfg = loader.get_eval()
-        except (FileNotFoundError, ValueError) as e:
-            print(f"[error] {e}")
-            return
-
-        asyncio.run(run_evaluation(
-            run_name, eval_cfg,
-            concurrency=args.concurrency,
-            force=args.force,
-        ))
+        if args.attribute:
+            asyncio.run(_run_both(run_name, args.concurrency, args.force))
+        else:
+            try:
+                eval_cfg = EvalConfigLoader().get_eval()
+            except (FileNotFoundError, ValueError) as e:
+                print(f"[error] {e}")
+                return
+            asyncio.run(run_evaluation(
+                run_name, eval_cfg,
+                concurrency=args.concurrency,
+                force=args.force,
+            ))
         # 评测完成后自动生成报告和导出
         try:
             html_path = generate_html_report(run_name)
@@ -150,6 +196,7 @@ def main():
             query_col=args.query_col,
             response_col=args.response_col,
             api_json_col=args.api_json_col,
+            note_col=args.note_col,
         )
     elif args.command == "show":
         _show_experiment(args.run)

@@ -12,6 +12,7 @@ from pathlib import Path
 from src.config import ExperimentConfigLoader
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import copy_dataset, _read_records, _normalize_api_json, _is_blank
+from src.attribution import digest
 
 
 def import_data(
@@ -20,6 +21,7 @@ def import_data(
         query_col: str = "query",
         response_col: str = "response",
         api_json_col: str = "api_json",
+        note_col: str = "human_note",
 ):
     """从 Excel / JSONL / CSV 导入数据，生成可供 eval 使用的 run 目录。
 
@@ -29,6 +31,7 @@ def import_data(
         query_col: Query 列名，默认 "query"
         response_col: 模型回答列名，默认 "response"
         api_json_col: api_json 列名，默认 "api_json"
+        note_col: 可选人工评论列，默认 human_note，兼容 note
     """
 
     # 读取数据（按扩展名分派）
@@ -51,7 +54,8 @@ def import_data(
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 保存数据集到 run 目录（仅保留用到的列，保证可追溯；保留源格式）
-    cols_to_keep = [query_col, response_col, api_json_col]
+    cols_to_keep = list(dict.fromkeys([query_col, response_col, api_json_col, note_col,
+                                     "note", "language", "location"]))
     saved_dataset_path = copy_dataset(data_path, result_dir, cols_to_keep)
 
     # 写入 responses.jsonl
@@ -61,6 +65,10 @@ def import_data(
         for idx, row in enumerate(records):
             query_text = str(row.get(query_col, ""))
             response_text = str(row.get(response_col, ""))
+            note = row.get(note_col)
+            if _is_blank(note) and note_col == "human_note":
+                note = row.get("note")
+            note = None if _is_blank(note) else str(note)
 
             # 解析 api_json，构造 rendered_request
             api_json_raw = row.get(api_json_col)
@@ -90,11 +98,15 @@ def import_data(
                 "query": query_text,
                 "language": row.get("language"),
                 "location": row.get("location"),
+                "human_note": note,
                 "rendered_request": rendered_request,
                 "response": {
                     "choices": [{"message": {"content": response_text}}]
                 },
             }
+            if note:
+                # 导入评论绑定到同一行的回答，后续替换回答时可检测版本错配。
+                record["human_note_answer_hash"] = digest(response_text)
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     if error_count > 0:

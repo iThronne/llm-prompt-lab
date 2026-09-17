@@ -2,6 +2,63 @@
 
 大模型 API 实验框架 -- 支持多 Profile 切换、Prompt 模板、数据集和参数的系统化实验，内置 LLM-as-Judge 评测、流式调用、代理支持、HTML 可视化报告与断点续跑。
 
+## 独立自动归因
+
+自动归因与 Judge 评分相互独立。它只读取候选 Query、实际 `rendered_request.messages`、模型回答和可选人工评论；不读取 `scores.jsonl`、Judge 分析或 `answer_trace`，也不联网。人工评论仅供核对，不默认正确。
+
+配置 `config/attribution.yaml` 中的模型及 `ATTRIBUTION_OPENAI_API_KEY` 环境变量后运行：
+
+```bash
+python -m src.cli attribute <run_name>
+python -m src.cli attribute <run_name> --rows 0 3 8 --concurrency 4
+python -m src.cli attribute <run_name> --rows 3 --force
+python -m src.cli attribute <run_name> --report-only
+python -m src.cli eval <run_name> --attribute
+```
+
+`run_name` 可省略，默认选择最新实验。`--format html` 或 `--format xlsx` 选择报告格式，默认生成两者，JSONL 始终保存。`--report-only` 不调用模型；`--config-dir` 可指定包含 `attribution.yaml` 和 `prompts/` 的配置目录。组合执行时两个流程的配置和运行错误分别处理；`eval --force` 仅针对评分，归因重跑使用 `attribute --force`。
+
+**输入与人工评论**
+
+- 导入支持 `--note-col`，默认 `human_note`，缺失时兼容 `note`。评论、语言、位置同时保存在源数据副本中。
+- 导入评论绑定同一行的回答摘要；后续替换回答会提示评论版本不匹配。
+- `run` 保留数据集中的 `human_note`/`note`，但不会假定针对旧回答的评论适用于新生成的回答。未绑定的评论会标记适用性限制。
+- 旧 run 导入时已经丢失的评论不会被自动找回。需要重新导入原数据到新 run，或将评论补入 `responses.jsonl` 的对应记录。
+- `messages` 是完整证据集合，关键词/结果是其中的专项视图。`search_tool_names` 按实际工具的 `function.name` 配置，忽略大小写精确匹配；不会将所有工具当作搜索。
+- 可独立配置 `sanitize`，递归覆盖 Query、Answer、messages、人工评论；快照和证据均基于实际发送的脱敏版本。
+
+**结果与主次判定**
+
+逐项核对人工评论，识别回答缺陷，再检查 Query、搜索关键词、搜索结果、其他上下文、答复五个环节。只有实际影响回答的因素才进入 `factors`；其余改进空间进入 `suggestions`，不确定解释进入 `open_questions`。
+
+每个 case 保存 `issues`（回答缺陷）、`factors`（任意数量的因素）、`evidence`（带 JSON Pointer 的原文引用）。通过 ID 建立多对多关系。`priority=1` 为最大影响因素，相同数字为并列，`null` 表示未定。影响程度与证据强度分别记录，不输出责任百分比。
+
+归因状态包括：唯一主因 `primary_identified`、并列主因 `joint_primary`、主次未定 `ranking_unresolved`、证据不足 `insufficient_evidence`、未发现材料支持的缺陷 `no_supported_issue`。证据不足是有效分析结果；API/解析/校验失败是执行失败，下次会重试。
+
+分析和建议使用简体中文，引用保留原语言。非中英文证据附中文释义，其他语言的 Query/Answer/评论附中文概要；释义不替代原文证据。程序验证原文连续匹配、引用定位、ID 关联及主次状态一致性；语义正确性仍需人工抽查。
+
+**存储、断点与报告**
+
+```text
+results/<run>/attribution/<config_hash>/
+  attribution_meta.json       # 模型、完整提示词、规则/结构版本
+  attributions.jsonl          # 完整输入快照和结构化归因，追加保存历史
+  attribution_summary.json    # 当前输入匹配结果的汇总
+  report.html                 # 可筛选、展开、证据跳转的完整报告
+  report.xlsx                 # 关联明细表及中文阅读说明
+```
+
+- JSONL 每条为一次 case 分析记录；强制重跑和输入变更保留历史。按 `case_id + input_hash + config_hash` 选最新匹配记录。变更输入/评论后不会把旧结论混入当前报告。
+- 模型、提示词、规则和输入处理配置变更产生新目录；仅调整并发/重试参数不使已成功结果失效。旧配置报告可使用其保存的模型设置和提示词恢复配置后重建。
+- 同一目录通过写锁避免并发进程交叉写入。异常退出留下 `.write.lock` 时，确认任务已停止后再移除。最后一行写入中断时保留备份并恢复；日志中间损坏不会静默忽略。
+- 输入超过 `max_input_chars` 时完整保存输入并记录失败，不静默截断；输出截断也视为失败。字符限制不是 token 上限，应按模型上下文容量配置。
+- Excel 包含案例总览、回答问题、因素明细、证据明细、评论核对、建议与待确认、环节检查、汇总统计。长文本明确标注摘录，完整内容以 JSONL 为准；原文按文本写入，不执行公式。
+- HTML 支持状态、因素环节、具体类型、关键词筛选，原文与中文释义对照，点击证据定位到消息。输入内容安全转义，不执行原文 HTML。
+- 报告基于当前全部源案例生成，未选中的案例若没有匹配结果会显示未处理。`--rows` 仅控制模型调用范围，不删历史或隐藏其他案例。
+- 统计区分唯一主因、并列主因、全部因素涉及的案例数，以及人工评论主张数；多环节涉及率可重叠，不能相加解释为责任占比。
+
+运行验证：`python -m unittest discover -s tests -v`。归因测试使用模拟 API，覆盖独立性、断点失效、多语言证据、超长数据、报告安全及失败恢复，不消耗模型额度。
+
 ## 快速开始
 
 ```bash

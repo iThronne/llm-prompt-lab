@@ -20,7 +20,7 @@ import pandas as pd
 # 数据集必需列
 REQUIRED_COLUMNS = ["query", "api_json"]
 # 数据集可选列（用于 locale / 垂域 上下文注入）
-OPTIONAL_COLUMNS = ["language", "location"]
+OPTIONAL_COLUMNS = ["language", "location", "human_note", "note", "human_note_answer_hash"]
 
 
 def _read_records(path: Path) -> list[dict]:
@@ -131,7 +131,7 @@ def load_dataset(path: str) -> list[dict]:
             raise ValueError(f"Dataset file '{path}' must have a '{col}' column")
 
     # 仅保留必需 + 存在的可选列
-    keep = list(REQUIRED_COLUMNS) + [c for c in OPTIONAL_COLUMNS if c in records[0]]
+    keep = list(REQUIRED_COLUMNS) + [c for c in OPTIONAL_COLUMNS if any(c in r for r in records)]
     records = [{k: r.get(k) for k in keep} for r in records]
 
     # api_json 归一化为字符串（JSONL 可能写成对象/数组）
@@ -139,7 +139,7 @@ def load_dataset(path: str) -> list[dict]:
 
     # 填充空值（NaN -> None）
     for r in records:
-        for key in ("language", "location"):
+        for key in OPTIONAL_COLUMNS:
             if _is_blank(r.get(key)):
                 r[key] = None
     return records
