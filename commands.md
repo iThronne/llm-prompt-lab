@@ -71,6 +71,25 @@ python -m src.cli import data/production.jsonl --name prod-attribution --note-co
 
 产物位于 `results/<run_name>/attribution/<config_hash>/`。`--report-only` 使用当前配置摘要匹配目录；重建旧配置报告时，使用保存的配置与提示词，通过 `--config-dir` 指定对应配置目录。
 
+## 页面导入与编辑人工评论
+
+```bash
+# 打开当前实验的人工评论管理页（无需评分、无需模型 API Key）
+python -m src.cli notes <run_name>
+
+# 默认最新实验；自定义端口或不自动打开浏览器
+python -m src.cli notes --port 8766 --no-open
+
+# 保存评论后，执行独立归因
+python -m src.cli attribute <run_name>
+```
+
+页面流程：选择 XLSX → 选择工作表及 Query/评论列 → 预览匹配 → 核对重复 Query 的回答并勾选 → 加入草稿 → 手动修改 → 保存全部修改。
+
+XLSX 第一行需为列名，默认识别 `query`、`human_note`、`note` 和常用中文列名，也可手动选择。匹配统一换行并去掉 Query 首尾空白，保留大小写和内部空白，不模糊匹配。重复、覆盖已有评论和未匹配项会告警，歧义项不会自动选中。
+
+评论保存在 `results/<run_name>/human_notes.jsonl`，不改写原始回答或评分。`attribute` 自动读取匹配当前回答/上下文版本的评论。`report --serve` 页面顶部也有人工评论管理入口。
+
 ## 导入现网数据
 
 ```bash

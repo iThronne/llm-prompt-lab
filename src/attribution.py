@@ -105,6 +105,8 @@ def build_input(row: dict, config: AttributionConfig) -> tuple[dict, list[str], 
             quality.append("人工评论未绑定具体回答版本；需检查其适用性，不默认评价当前回答。")
         elif bound != digest(snapshot["answer"]):
             quality.append("人工评论绑定的回答与当前回答不同，仅保留为参考，不能直接套用。")
+    if row.get("human_note_warning"):
+        quality.append(row["human_note_warning"])
 
     compiled = compile_rules(config.sanitize)
 
@@ -298,6 +300,8 @@ async def run_attribution(run_name: str, config: AttributionConfig, *, rows: lis
                           formats: tuple[str, ...] = ("html", "xlsx")) -> Path:
     model = offline_model(config)
     all_rows = read_responses(RESULTS_DIR / run_name / "responses.jsonl")
+    from src.human_notes import apply_human_notes
+    all_rows = apply_human_notes(all_rows, RESULTS_DIR / run_name)
     if rows is not None and not set(rows) <= {r["row_index"] for r in all_rows}:
         raise ValueError("--rows 包含源数据中不存在的 row_index")
     cases = prepare_cases(all_rows, config, run_name)

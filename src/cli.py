@@ -7,6 +7,7 @@
   show <run>       查看实验结果摘要
   report <run>     生成 HTML 可视化报告，可用 --serve 在页面内流式追问
   export <run>     导出 Excel 文件
+  notes [run]      按 Query 导入 XLSX 人工评论，支持页面编辑保存
   calibrate [run]  对比人工评分与 Judge 评分，生成校准报告
   advise [run]     读取 run 结果，由大模型给出 System Prompt 优化建议
   ask [run] -r N   就某个 case 向大模型追问（基于评分标准与 case 上下文）
@@ -31,7 +32,7 @@ from src.evaluator import run_evaluation
 from src.experiment import run_experiment
 from src.importer import import_data
 from src.reporter import generate_html_report, export_excel, export_responses
-from src.report_server import serve_report
+from src.report_server import serve_report, serve_notes
 
 
 def _resolve_run_name(run_name: str | None) -> str | None:
@@ -98,6 +99,11 @@ def main():
     attribute_p.add_argument("--format", nargs="+", choices=["html", "xlsx"], default=["html", "xlsx"], help="报告格式（JSONL 始终保存）")
     attribute_p.add_argument("--config-dir", type=Path, help="归因配置目录（含 attribution.yaml 和 prompts/）")
 
+    notes_p = sub.add_parser("notes", help="打开人工评论管理页面，按 Query 导入 XLSX、编辑并保存")
+    notes_p.add_argument("run", nargs="?", help="run 名称（默认最新实验）")
+    notes_p.add_argument("--port", type=int, default=8765, help="本地服务端口（默认 8765）")
+    notes_p.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+
     import_p = sub.add_parser("import", help="从 Excel/JSONL 导入已有数据（用于评测现网数据）")
     import_p.add_argument("data", help="数据文件路径（.xlsx/.jsonl/.csv）")
     import_p.add_argument("--name", required=True, help="生成的 run 名称")
@@ -144,6 +150,13 @@ def main():
             print(f"[done] responses.xlsx 已导出 → {path}")
         except Exception as e:
             print(f"[warn] responses.xlsx 导出失败: {e}")
+    elif args.command == "notes":
+        run_name = _resolve_run_name(args.run)
+        if run_name:
+            try:
+                serve_notes(run_name, port=args.port, open_browser=not args.no_open)
+            except (FileNotFoundError, ValueError, OSError) as exc:
+                parser.exit(1, f"[error] {exc}\n")
     elif args.command == "attribute":
         if args.report_only and args.force:
             parser.error("--report-only 与 --force 不能同时使用")
