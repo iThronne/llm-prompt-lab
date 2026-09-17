@@ -49,8 +49,9 @@ a{color:var(--accent)}table{border-collapse:collapse;width:100%}td,th{text-align
 <small>输入摘要：{{ record.input_hash }} · 配置摘要：{{ record.config_hash }}</small>
 </details>{% endfor %}
 </main><script>
+{% include 'text_matching.js' %}
 const cases=[...document.querySelectorAll('.case')];
-function filter(){const q=document.getElementById('search').value.toLowerCase(),s=document.getElementById('stage').value,t=document.getElementById('status').value,p=document.getElementById('type').value.toLowerCase();let n=0;for(const c of cases){c.hidden=!!((q&&!c.textContent.toLowerCase().includes(q))||(s&&!c.dataset.stage.split(' ').includes(s))||(t&&c.dataset.status!==t)||(p&&!c.dataset.type.toLowerCase().includes(p)));if(!c.hidden)n++}document.getElementById('count').textContent=`显示 ${n} / ${cases.length} 个案例`}
+function filter(){const q=document.getElementById('search').value,s=document.getElementById('stage').value,t=document.getElementById('status').value,p=document.getElementById('type').value;let n=0;for(const c of cases){c.hidden=!!((q&&!matchesSearchText(c.textContent,q))||(s&&!c.dataset.stage.split(' ').includes(s))||(t&&c.dataset.status!==t)||(p&&!matchesSearchText(c.dataset.type,p)));if(!c.hidden)n++}document.getElementById('count').textContent=`显示 ${n} / ${cases.length} 个案例`}
 for(const id of ['search','stage','status','type'])document.getElementById(id).addEventListener('input',filter);filter();
 function reveal(){const target=document.getElementById(location.hash.slice(1));if(!target)return;let el=target;while(el){if(el.tagName==='DETAILS')el.open=true;el=el.parentElement}target.scrollIntoView({block:'center'})}window.addEventListener('hashchange',reveal);reveal();
 </script></body></html>

@@ -86,7 +86,9 @@ python -m src.cli attribute <run_name>
 
 页面流程：选择 XLSX → 选择工作表及 Query/评论列 → 预览匹配 → 核对重复 Query 的回答并勾选 → 加入草稿 → 手动修改 → 保存全部修改。
 
-XLSX 第一行需为列名，默认识别 `query`、`human_note`、`note` 和常用中文列名，也可手动选择。匹配统一换行并去掉 Query 首尾空白，保留大小写和内部空白，不模糊匹配。重复、覆盖已有评论和未匹配项会告警，歧义项不会自动选中。
+XLSX 第一行需为列名，默认识别 `query`、`human_note`、`note` 和常用中文列名，也可手动选择。优先原文匹配；无匹配时兼容 Unicode 重音编码、问号字形、不可见分隔符和空白，再尝试忽略句首倒问号/句末问号。这些非原文匹配会展示候选 Query 并要求手动勾选；重复、覆盖已有评论和未匹配项也会告警。原文不会被改写。
+
+更新搜索逻辑后，已有 Judge HTML 用 `python -m src.cli report <run_name>` 重新生成即可，无需重跑评分；人工评论服务需重启。
 
 评论保存在 `results/<run_name>/human_notes.jsonl`，不改写原始回答或评分。`attribute` 自动读取匹配当前回答/上下文版本的评论。`report --serve` 页面顶部也有人工评论管理入口。
 

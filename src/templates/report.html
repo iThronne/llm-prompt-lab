@@ -1070,7 +1070,9 @@
             refreshScoreStatistics();
         }
 
-        // 搜索
+        {% include 'text_matching.js' %}
+
+        // 搜索（仅规范化查找键，保留原文）
         document.getElementById('searchInput').addEventListener('input', (e) => {
             applyFilters();
         });
@@ -1084,10 +1086,10 @@
         }
 
         function applyFilters() {
-            const query = document.getElementById('searchInput').value.toLowerCase();
+            const query = document.getElementById('searchInput').value;
             filteredRows = ROWS_DATA.filter(r => {
                 // 文本搜索
-                if (query && !r.query.toLowerCase().includes(query) && !r.response.toLowerCase().includes(query)) {
+                if (query && !matchesSearchText(r.query, query) && !matchesSearchText(r.response, query)) {
                     return false;
                 }
                 {% if has_scores %}

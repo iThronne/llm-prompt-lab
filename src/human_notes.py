@@ -13,6 +13,7 @@ from zipfile import ZipFile, BadZipFile
 from openpyxl import load_workbook
 
 from src.attribution import digest, read_responses
+from src.text_matching import exact_query, normalize_query, question_key
 
 MAX_XLSX_BYTES = 20 * 1024 * 1024
 MAX_XLSX_EXPANDED = 100 * 1024 * 1024
@@ -34,10 +35,6 @@ def answer_text(row):
     if value is None:
         return ""
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-
-
-def normalize_query(value):
-    return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def target_hash(row):
@@ -101,9 +98,9 @@ def list_cases(run_dir: Path):
     rows = read_responses(run_dir / "responses.jsonl")
     latest = {n["row_index"]: n for n in load_notes(run_dir / "human_notes.jsonl")}
     cases = [note_state(row, latest) for row in rows]
-    counts = Counter(normalize_query(c["query"]) for c in cases)
+    counts = Counter(question_key(c["query"]) for c in cases)
     for case in cases:
-        case["query_match_count"] = counts[normalize_query(case["query"])]
+        case["query_match_count"] = counts[question_key(case["query"])]
     return cases
 
 
@@ -233,14 +230,31 @@ def preview_import(data, cases, sheet_name, query_column, note_column):
                              "warnings": warnings, "blocked": blocked})
     finally:
         workbook.close()
-    source_counts = Counter(normalize_query(r["query"]) for r in imported if normalize_query(r["query"]))
-    targets = defaultdict(list)
+    source_counts = Counter(question_key(r["query"]) for r in imported if question_key(r["query"]))
+    exact_targets, targets, question_targets = (defaultdict(list) for _ in range(3))
     for case in cases:
+        exact_targets[exact_query(case["query"])].append(case)
         targets[normalize_query(case["query"])].append(case)
+        if question_key(case["query"]):
+            question_targets[question_key(case["query"])].append(case)
     stats = Counter()
     for row in imported:
-        matches = targets.get(normalize_query(row["query"]), []) if normalize_query(row["query"]) else []
-        duplicate_source = source_counts[normalize_query(row["query"])] > 1
+        key = normalize_query(row["query"])
+        matches = exact_targets.get(exact_query(row["query"]), []) if key else []
+        row["match_type"] = "exact" if matches else "unmatched"
+        if not matches and key:
+            matches = targets.get(key, [])
+            if matches:
+                row["match_type"] = "normalized"
+                row["warnings"].append("规范化匹配：Unicode 重音编码、问号字形或空白存在差异，请核对候选 Query 原文")
+                stats["normalized_rows"] += 1
+        if not matches and question_key(key):
+            matches = question_targets.get(question_key(key), [])
+            if matches:
+                row["match_type"] = "question_punctuation"
+                row["warnings"].append("问句标点匹配：忽略了句首倒问号/句末问号差异，请核对候选 Query 和回答")
+                stats["question_punctuation_rows"] += 1
+        duplicate_source = source_counts[question_key(row["query"])] > 1
         if duplicate_source:
             row["warnings"].append("表内 Query 重复：需选择采用哪一行评论")
             stats["duplicate_source_rows"] += 1
@@ -255,10 +269,10 @@ def preview_import(data, cases, sheet_name, query_column, note_column):
             stats["existing_note_rows"] += 1
         if row["blocked"]:
             stats["blocked_rows"] += 1
-        row["candidates"] = [{"row_index": c["row_index"], "answer_preview": c["answer_preview"],
+        row["candidates"] = [{"row_index": c["row_index"], "query": c["query"], "answer_preview": c["answer_preview"],
                                "has_note": c["has_note"], "revision": c["revision"]} for c in matches]
         row["auto_select"] = (not row["blocked"] and len(matches) == 1 and not row["warnings"])
         if row["auto_select"]:
             stats["ready_rows"] += 1
     return {"rows": imported, "summary": {"total_rows": len(imported), **dict(stats)},
-            "matching_rule": "Query 统一换行并去掉首尾空白后精确匹配；不忽略大小写，不做模糊匹配。"}
+            "matching_rule": "先按 Query 原文（去首尾空白、统一换行）匹配；无匹配时兼容 Unicode 重音编码、问号字形、空白，再尝试忽略句首倒问号/句末问号。后两类需人工勾选；保留大小写、重音区别和原文，不做任意模糊匹配。"}
