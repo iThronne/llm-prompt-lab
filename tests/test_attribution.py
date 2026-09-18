@@ -192,6 +192,48 @@ class AttributionIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(api.await_count, 3)
             self.assertEqual((run / "scores.jsonl").read_text(), "DO NOT READ OR MODIFY")
 
+    async def test_only_with_human_note_filters_effective_notes(self):
+        from src.human_notes import list_cases, save_notes
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run = root / "r"
+            run.mkdir()
+            rows = [source_row() for _ in range(7)]
+            for index, row in enumerate(rows):
+                row["row_index"] = index
+                row.pop("human_note", None)
+            rows[0]["human_note"] = "人工评论"
+            rows[1]["human_note"] = " \n\t "
+            rows[2]["note"] = "兼容评论"
+            rows[4]["note"] = "将被清空"
+            source = run / "responses.jsonl"
+            def write_source():
+                source.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+            write_source()
+            states = list_cases(run)
+            save_notes(run, [{"row_index": i, "human_note": note, "revision": states[i]["revision"]}
+                             for i, note in [(3, "页面评论"), (4, ""), (5, "旧版评论")]])
+            rows[5]["query"] += "已修改"
+            write_source()
+            api = AsyncMock(return_value=model_response())
+            with patch("src.attribution.RESULTS_DIR", root), patch("src.attribution.create_client", return_value=AsyncMock()), patch("src.attribution.call_model", api):
+                directory = await run_attribution("r", config(), only_with_human_note=True, formats=())
+                self.assertEqual({r["row_index"] for r in load_journal(directory / "attributions.jsonl")}, {0, 2, 3})
+                self.assertEqual(api.await_count, 3)
+                await run_attribution("r", config(), only_with_human_note=True, formats=())
+                self.assertEqual(api.await_count, 3)
+                await run_attribution("r", config(), only_with_human_note=True, rows=[1, 2], force=True, formats=())
+                self.assertEqual(api.await_count, 4)
+                self.assertEqual(load_journal(directory / "attributions.jsonl")[-1]["row_index"], 2)
+                await run_attribution("r", config(), only_with_human_note=True, rows=[1, 4, 5, 6], force=True, formats=())
+                self.assertEqual(api.await_count, 4)
+                await run_attribution("r", config(), only_with_human_note=True, report_only=True, formats=())
+                self.assertEqual(api.await_count, 4)
+                stats = json.loads((directory / "attribution_summary.json").read_text(encoding="utf-8"))
+                self.assertEqual(stats["execution_counts"], {"success": 3, "not_processed": 4})
+                await run_attribution("r", config(), formats=())
+                self.assertEqual(api.await_count, 8)
+
     async def test_failure_retries_and_oversize_without_truncation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

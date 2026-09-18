@@ -59,6 +59,9 @@ python -m src.cli attribute <run_name> --rows 3 --force
 # 不调用模型，仅重建当前归因配置的报告
 python -m src.cli attribute <run_name> --report-only
 
+# 仅对有非空人工评论的案例归因（可与 --rows、--force 同用）
+python -m src.cli attribute <run_name> --only-with-human-note
+
 # 只生成 HTML（完整结果仍保存在 JSONL）
 python -m src.cli attribute <run_name> --format html
 

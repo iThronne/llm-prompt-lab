@@ -93,6 +93,7 @@ def main():
     attribute_p = sub.add_parser("attribute", help="独立归因并生成 JSONL/HTML/Excel，无需评分")
     attribute_p.add_argument("run", nargs="?", help="run 名称（默认最新实验）")
     attribute_p.add_argument("--rows", type=int, nargs="+", help="仅分析指定 row_index，默认全量")
+    attribute_p.add_argument("--only-with-human-note", action="store_true", help="仅归因具有非空人工评论的案例，可与 --rows 取交集")
     attribute_p.add_argument("--concurrency", "-c", type=int, help="并发数（默认 attribution.yaml）")
     attribute_p.add_argument("--force", action="store_true", help="重新归因选定案例；保留历史记录")
     attribute_p.add_argument("--report-only", action="store_true", help="不调用模型，重建当前配置报告")
@@ -170,6 +171,7 @@ def main():
             if args.concurrency is not None:
                 cfg.concurrency = args.concurrency
             asyncio.run(run_attribution(run_name, cfg, rows=args.rows, force=args.force,
+                                       only_with_human_note=args.only_with_human_note,
                                        report_only=args.report_only, formats=tuple(args.format)))
         except (FileNotFoundError, ValueError, OSError) as exc:
             parser.exit(1, f"[error] {exc}\n")

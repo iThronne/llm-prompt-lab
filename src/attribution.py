@@ -297,6 +297,7 @@ def summarize(records):
 
 async def run_attribution(run_name: str, config: AttributionConfig, *, rows: list[int] | None = None,
                           force: bool = False, report_only: bool = False,
+                          only_with_human_note: bool = False,
                           formats: tuple[str, ...] = ("html", "xlsx")) -> Path:
     model = offline_model(config)
     all_rows = read_responses(RESULTS_DIR / run_name / "responses.jsonl")
@@ -304,6 +305,14 @@ async def run_attribution(run_name: str, config: AttributionConfig, *, rows: lis
     all_rows = apply_human_notes(all_rows, RESULTS_DIR / run_name)
     if rows is not None and not set(rows) <= {r["row_index"] for r in all_rows}:
         raise ValueError("--rows 包含源数据中不存在的 row_index")
+    selected = {r["row_index"] for r in all_rows if rows is None or r["row_index"] in rows}
+    if only_with_human_note:
+        with_note = {r["row_index"] for r in all_rows
+                     if (_text(r.get("human_note") if r.get("human_note") is not None
+                               else r.get("note")) or "").strip()}
+        skipped = len(selected - with_note)
+        selected &= with_note
+        print(f"[attribute] 仅处理有人工评论的案例：符合条件 {len(selected)} 条，跳过无评论 {skipped} 条")
     cases = prepare_cases(all_rows, config, run_name)
     hash_value = config_hash(config)
     directory = RESULTS_DIR / run_name / "attribution" / hash_value
@@ -314,7 +323,7 @@ async def run_attribution(run_name: str, config: AttributionConfig, *, rows: lis
     with directory_lock(directory):
         journal = load_journal(journal_path)
         current = current_records(cases, journal, hash_value)
-        pending = [r for r in current if (rows is None or r["row_index"] in rows)
+        pending = [r for r in current if r["row_index"] in selected
                    and (force or r["execution"]["status"] != "success")]
         if not report_only:
             write_json(directory / "attribution_meta.json", {

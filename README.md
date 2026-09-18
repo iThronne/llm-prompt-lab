@@ -4,6 +4,8 @@
 
 ## 独立自动归因
 
+`attribute --only-with-human-note` 仅对有非空人工评论的案例执行归因，可与 `--rows` 取交集，也可与 `--force` 同用。优先采用页面保存且版本匹配的评论，兼容源数据 `human_note` / `note`；空白或已清空评论不满足条件，旧版页面评论不自动套用。默认行为不变。筛选仅影响本次执行，报告仍展示全部案例与已有结果，未处理案例保持 `not_processed`；`--report-only` 仍重建完整报告。
+
 自动归因与 Judge 评分相互独立。它只读取候选 Query、实际 `rendered_request.messages`、模型回答和可选人工评论；不读取 `scores.jsonl`、Judge 分析或 `answer_trace`，也不联网。人工评论仅供核对，不默认正确。
 
 配置 `config/attribution.yaml` 中的模型及 `ATTRIBUTION_OPENAI_API_KEY` 环境变量后运行：
