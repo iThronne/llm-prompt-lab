@@ -1,4 +1,4 @@
-"""从归因结构化数据生成 HTML 和 Excel；不调用模型、不读取评分。"""
+"""从归因及可选独立评分结构化数据生成 HTML 和 Excel；不调用模型。"""
 
 import base64
 import json
@@ -18,6 +18,7 @@ LABELS = {
     "direct": "直接支持", "indirect": "间接支持", "supported": "材料支持",
     "refuted": "材料反驳", "unverifiable": "无法验证", "checked": "已检查",
     "not_applicable": "不适用", "unavailable": "无法检查",
+    "unscorable": "无法评分",
 }
 
 
@@ -50,10 +51,14 @@ def summary_rows(summary):
         "involved_cases_by_stage": "全部因素涉及（案例数，可重叠）",
         "problem_type_case_counts": "具体问题类型（案例数，可重叠）", "note_claim_counts": "评论核对（主张数）",
         "failure_counts": "执行失败原因（案例数）",
+        "score_status_counts": "独立评分状态（案例数）",
     }
     for key, title in categories.items():
         for name, count in summary.get(key, {}).items():
             yield [title, label(name), count]
+    if "score_overall_count" in summary:
+        yield ["独立整体评分", "可评分案例数", summary["score_overall_count"]]
+        yield ["独立整体评分", "平均分（仅含有效 overall）", summary["score_overall_mean"]]
 
 
 def report_tables(records, summary):
@@ -67,6 +72,10 @@ def report_tables(records, summary):
         "环节检查": (["Case ID", "环节", "检查状态", "发现", "证据 ID", "完整记录定位"], []),
         "汇总统计": (["统计口径", "项目", "数量"], list(summary_rows(summary))),
     }
+    has_scores = any("score" in record for record in records)
+    if has_scores:
+        tables["案例总览"][0].extend(["整体分数（1–5）", "评分状态", "评分理由"])
+        tables["评分明细"] = (["Case ID", "评分状态", "指标", "分数（1–5）", "评分理由/错误", "配置摘要", "输入摘要", "完整记录定位"], [])
     for record in records:
         cid = record["case_id"]
         locator = f"attributions.jsonl | case_id={cid} | input_hash={record['input_hash']} | 最新匹配记录"
@@ -78,6 +87,15 @@ def report_tables(records, summary):
             result.get("content_summaries_zh", {}).get("query"),
             label(result.get("status") or record["execution"]["status"]), primary, len(factors),
             result.get("summary"), "\n".join(record["input_quality"]), record["execution"].get("error"), locator])
+        if has_scores:
+            score = record.get("score") or {}
+            evaluated = score.get("result") or {}
+            reason = evaluated.get("analysis") or score.get("error")
+            tables["案例总览"][1][-1].extend([score.get("overall"), label(score.get("status", "not_processed")), reason])
+            for dim in score.get("dimensions") or ["overall"]:
+                tables["评分明细"][1].append([cid, label(score.get("status", "not_processed")), dim,
+                    evaluated.get(dim), reason, score.get("eval_config_hash"), score.get("score_input_hash"),
+                    score.get("locator")])
         for issue in result.get("issues", []):
             tables["回答问题"][1].append([cid, issue["id"], issue["description"], label(issue["impact_level"]),
                                       ", ".join(issue["evidence_ids"]), locator])

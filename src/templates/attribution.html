@@ -23,12 +23,23 @@ a{color:var(--accent)}table{border-collapse:collapse;width:100%}td,th{text-align
 <div class="filters"><label>查找案例或内容<input id="search" type="search" placeholder="Case ID、关键词"></label>
 <label>问题环节<select id="stage"><option value="">全部环节</option>{% for key,name in stages.items() %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
 <label>归因状态<select id="status"><option value="">全部状态</option>{% for key,name in statuses.items() %}<option value="{{ key }}">{{ name }}</option>{% endfor %}<option value="failed">执行失败</option><option value="not_processed">未处理/输入已变化</option></select></label>
-<label>具体问题类型<input id="type" type="search" placeholder="问题类型关键词"></label><span id="count"></span></div>
+<label>具体问题类型<input id="type" type="search" placeholder="问题类型关键词"></label>
+{% if records|selectattr('score', 'defined')|list %}
+<label>最低分<input id="score-min" type="number" min="1" max="5" step="0.1"></label><label>最高分<input id="score-max" type="number" min="1" max="5" step="0.1"></label>
+<label>评分状态<select id="score-status"><option value="">全部</option><option value="success">评分成功</option><option value="failed">评分失败</option><option value="unscorable">无法评分</option><option value="not_processed">未处理</option></select></label>
+<label>排序<select id="score-sort"><option value="">原始顺序</option><option value="asc">分数从低到高</option><option value="desc">分数从高到低</option></select></label>
+{% endif %}<span id="count"></span></div>
+{% if records|selectattr('score', 'defined')|list %}<p>整体分数沿用 eval 的 overall（1–5 分），不对分项求平均。评分与归因分别执行，评分可使用 eval 配置允许的联网能力。设置分数范围后，下方统计展示筛选案例的主要因素环节；多主因案例可能重复计数。</p><p id="score-stages"></p>{% endif %}
 {% for record in records %}{% set r = record.result %}{% set cid = record.case_id %}
-<details class="case" data-stage="{{ r.factors|map(attribute='stage')|join(' ') if r else '' }}" data-type="{{ r.factors|map(attribute='problem_type')|join(' ') if r else '' }}" data-status="{{ r.status if r else record.execution.status }}">
+{% set score = record.get('score', {}) %}
+<details class="case" data-score="{{ score.overall if score.get('overall') is not none else '' }}" data-score-status="{{ score.get('status', '') }}" data-primary="{% if r %}{% for f in r.factors %}{% if f.id in r.primary_factor_ids %}{{ label(f.stage) }}|{% endif %}{% endfor %}{% endif %}" data-stage="{{ r.factors|map(attribute='stage')|join(' ') if r else '' }}" data-type="{{ r.factors|map(attribute='problem_type')|join(' ') if r else '' }}" data-status="{{ r.status if r else record.execution.status }}">
 <summary><div class="case-title"><strong>{{ cid }}</strong><span>{{ label(r.status if r else record.execution.status) }} · {{ r.factors|length if r else 0 }} 个因素</span></div>
 <p>{{ (r.content_summaries_zh.query if r and r.content_summaries_zh.query else record.input_snapshot.query)|truncate(200) }}</p>
+{% if score %}<p>整体评分：{{ score.overall if score.get('overall') is not none else '—' }} / 5 · {{ label(score.status) }}</p>{% endif %}
 {% if r %}<p>{{ r.summary }}</p>{% endif %}</summary>
+{% if score %}<details><summary>独立评分明细与依据</summary>
+<p>{{ score.get('error', '') }}</p>{% if score.result %}<p>{{ score.result.analysis }}</p><table><tr><th>指标</th><th>分数（1–5）</th></tr>{% for dim in score.dimensions %}<tr><td>{{ dim }}</td><td>{{ score.result[dim] if score.result[dim] is not none else '不适用/无法评分' }}</td></tr>{% endfor %}</table>{% endif %}
+<p>评分配置：{{ score.get('eval_config_hash', '不可用') }}；输入版本：{{ score.get('score_input_hash', '不可用') }}</p><pre>{{ full_json(score) }}</pre></details>{% endif %}
 {% if record.input_quality %}<h3>材料完整性</h3><ul>{% for item in record.input_quality %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
 {% if record.execution.error %}<p>执行错误：{{ record.execution.error }}</p>{% endif %}
 {% if r %}
@@ -51,7 +62,7 @@ a{color:var(--accent)}table{border-collapse:collapse;width:100%}td,th{text-align
 </main><script>
 {% include 'text_matching.js' %}
 const cases=[...document.querySelectorAll('.case')];
-function filter(){const q=document.getElementById('search').value,s=document.getElementById('stage').value,t=document.getElementById('status').value,p=document.getElementById('type').value;let n=0;for(const c of cases){c.hidden=!!((q&&!matchesSearchText(c.textContent,q))||(s&&!c.dataset.stage.split(' ').includes(s))||(t&&c.dataset.status!==t)||(p&&!matchesSearchText(c.dataset.type,p)));if(!c.hidden)n++}document.getElementById('count').textContent=`显示 ${n} / ${cases.length} 个案例`}
-for(const id of ['search','stage','status','type'])document.getElementById(id).addEventListener('input',filter);filter();
+function filter(){const value=id=>document.getElementById(id)?.value||'',q=value('search'),s=value('stage'),t=value('status'),p=value('type'),lo=value('score-min'),hi=value('score-max'),ss=value('score-status');let n=0;const counts={};for(const c of cases){const score=c.dataset.score;c.hidden=!!((q&&!matchesSearchText(c.textContent,q))||(s&&!c.dataset.stage.split(' ').includes(s))||(t&&c.dataset.status!==t)||(p&&!matchesSearchText(c.dataset.type,p))||(ss&&c.dataset.scoreStatus!==ss)||((lo!==''||hi!=='')&&(score===''||(lo!==''&&Number(score)<Number(lo))||(hi!==''&&Number(score)>Number(hi)))));if(!c.hidden){n++;for(const stage of new Set(c.dataset.primary.split('|').filter(Boolean)))counts[stage]=(counts[stage]||0)+1}}document.getElementById('count').textContent=`显示 ${n} / ${cases.length} 个案例`;const stats=document.getElementById('score-stages');if(stats)stats.textContent='当前筛选案例的主要因素：'+(Object.entries(counts).map(([k,v])=>`${k} ${v} 例`).join('；')||'暂无已确定主因');const order=value('score-sort'),sorted=order?[...cases].sort((a,b)=>{const x=a.dataset.score,y=b.dataset.score;if(x==='')return y===''?0:1;if(y==='')return -1;return (Number(x)-Number(y))*(order==='asc'?1:-1)}):cases;for(const c of sorted)c.parentElement.appendChild(c)}
+for(const id of ['search','stage','status','type','score-min','score-max','score-status','score-sort'])document.getElementById(id)?.addEventListener('input',filter);filter();
 function reveal(){const target=document.getElementById(location.hash.slice(1));if(!target)return;let el=target;while(el){if(el.tagName==='DETAILS')el.open=true;el=el.parentElement}target.scrollIntoView({block:'center'})}window.addEventListener('hashchange',reveal);reveal();
 </script></body></html>

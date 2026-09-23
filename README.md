@@ -6,7 +6,7 @@
 
 `attribute --only-with-human-note` 仅对有非空人工评论的案例执行归因，可与 `--rows` 取交集，也可与 `--force` 同用。优先采用页面保存且版本匹配的评论，兼容源数据 `human_note` / `note`；空白或已清空评论不满足条件，旧版页面评论不自动套用。默认行为不变。筛选仅影响本次执行，报告仍展示全部案例与已有结果，未处理案例保持 `not_processed`；`--report-only` 仍重建完整报告。
 
-自动归因与 Judge 评分相互独立。它只读取候选 Query、实际 `rendered_request.messages`、模型回答和可选人工评论；不读取 `scores.jsonl`、Judge 分析或 `answer_trace`，也不联网。人工评论仅供核对，不默认正确。
+自动归因与 Judge 评分相互独立。归因模型只读取候选 Query、实际 `rendered_request.messages`、模型回答和可选人工评论；不接收 Judge 分数、分析或 `answer_trace`，也不联网。人工评论仅供核对，不默认正确。可选 `--with-score` 单独执行评分，再在报告中关联展示。
 
 配置 `config/attribution.yaml` 中的模型及 `ATTRIBUTION_OPENAI_API_KEY` 环境变量后运行：
 
@@ -33,9 +33,19 @@ python -m src.cli eval <run_name> --attribute
 
 **结果与主次判定**
 
+可选整体评分：`python -m src.cli attribute <run_name> --with-score`。可与 `--rows`、`--only-with-human-note` 组合，两个流程使用相同执行范围。评分独立读取 `config/eval.yaml`（包括 Judge 模型、联网设置、量表和脱敏规则），需配置 `JUDGE_OPENAI_API_KEY`；直接使用 `overall`（1–5 分），不平均分项，无整体分数时显示“无法评分”。人工评论仅参与归因，不传入评分请求；评分结果也不传入归因模型。`--config-dir` 仍仅指定归因配置目录。
+
+`eval` 与 `attribute --with-score` 共用源头优先的 Judge 规则：搜索词合理但召回不足或结果错误，优先在分析中定位搜索结果；关键词遗漏约束导致缺口，优先定位搜索规划。模型忠实沿用当时无法识别的错误结果，不自动降低搜索利用分；Judge 后续找到反证不等于候选当时能识别。最终答复的实际缺陷仍影响回答质量与整体分数，模型独立编造、遗漏已有证据等问题仍单独判断。
+
+评分历史保存到 `results/<run>/scoring/<eval_config_hash>/scores.jsonl`，包括完整评分依据、请求、输入和配置版本；评分与归因分别断点续跑。评分失败自动重试 3 次，下次运行补跑；修改人工评论或归因提示词只影响归因，修改评分配置或候选输入会重新评分。`--force` 只强制归因重跑。`--with-score --report-only` 不调用任何模型，按当前配置重建关联报告。只有同时具备匹配输入摘要与配置摘要的 eval 评分可复用；旧版本缺少摘要的评分会重新计算，原 eval 文件不改写。
+
+带评分的 HTML 支持分数范围、评分状态和分数排序，并统计筛选案例涉及的主要因素环节；Excel 增加整体分数、评分状态、评分理由及评分明细页。报告仍包含全部案例，未选案例可展示已有匹配结果。评分失败不记零分，也不阻止归因；未使用 `--with-score` 时报告保持纯归因模式。
+
 逐项核对人工评论，识别回答缺陷，再检查 Query、搜索关键词、搜索结果、其他上下文、答复五个环节。只有实际影响回答的因素才进入 `factors`；其余改进空间进入 `suggestions`，不确定解释进入 `open_questions`。
 
 每个 case 保存 `issues`（回答缺陷）、`factors`（任意数量的因素）、`evidence`（带 JSON Pointer 的原文引用）。通过 ID 建立多对多关系。`priority=1` 为最大影响因素，相同数字为并列，`null` 表示未定。影响程度与证据强度分别记录，不输出责任百分比。
+
+主因优先定位造成核心缺陷的上游信息缺口：关键词准确但结果缺少必要信息，且补足信息预计能消除核心缺陷时，优先归因于搜索结果；关键词遗漏约束造成缺口则归因于搜索关键词。有前后对照证据证明已召回信息在组装时丢失，才归因于上下文组装；正确证据已在最终上下文而答复仍错，则归因于答复使用。模型另行编造等独立错误可列为次因，成为最严重问题时也可为主因。同一缺口不重复归因，不仅因环节更早就判主因；信息缺口不等于已证明搜索系统本可召回，未知的可获取性和内部原因列入待核实问题。
 
 归因状态包括：唯一主因 `primary_identified`、并列主因 `joint_primary`、主次未定 `ranking_unresolved`、证据不足 `insufficient_evidence`、未发现材料支持的缺陷 `no_supported_issue`。证据不足是有效分析结果；API/解析/校验失败是执行失败，下次会重试。
 

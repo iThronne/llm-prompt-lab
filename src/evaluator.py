@@ -39,6 +39,22 @@ def compute_eval_hash(eval_cfg: EvalConfig) -> str:
     return hashlib.md5(canonical.encode()).hexdigest()[:8]
 
 
+def score_input_hash(result: dict) -> str:
+    """绑定评分材料，不包含人工评论、归因或其他运行结果。"""
+    payload = {"query": result.get("query"), "rendered_request": result.get("rendered_request"),
+               "response": result.get("response"), "language": result.get("language"),
+               "location": result.get("location")}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+
+
+def build_score_messages(result: dict, eval_cfg: EvalConfig) -> list[dict]:
+    messages = (result.get("rendered_request") or {}).get("messages", [])
+    return _build_judge_messages(eval_cfg.prompt,
+        sanitize_messages(messages, compile_rules(eval_cfg.sanitize)),
+        _extract_response_text(result.get("response")),
+        language=result.get("language"), location=result.get("location"))
+
+
 async def run_evaluation(
     run_name: str,
     eval_cfg: EvalConfig,
@@ -55,7 +71,6 @@ async def run_evaluation(
     """
     judge_model_cfg = eval_cfg.model
     client = create_client(judge_model_cfg)
-    compiled_sanitize = compile_rules(eval_cfg.sanitize)
 
     if eval_cfg.sanitize:
         print(f"[info] sanitize rules loaded: {len(eval_cfg.sanitize)} rule(s)")
@@ -125,7 +140,6 @@ async def run_evaluation(
     pending = [r for r in results if r["row_index"] not in existing_scores]
 
     if pending:
-        system_prompt = eval_cfg.prompt
         dims = eval_cfg.dimensions
         semaphore = asyncio.Semaphore(concurrency)
         write_lock = asyncio.Lock()
@@ -145,15 +159,7 @@ async def run_evaluation(
                 row_idx = r["row_index"]
                 response_text = _extract_response_text(r["response"])
 
-                # 取 rendered_request 中的完整 messages（含 system）做脱敏后传给 judge
-                rendered_request = r.get("rendered_request", {})
-                all_messages = rendered_request.get("messages", [])
-                sanitized_messages = sanitize_messages(all_messages, compiled_sanitize)
-
-                messages = _build_judge_messages(
-                    system_prompt, sanitized_messages, response_text,
-                    language=r.get("language"), location=r.get("location"),
-                )
+                messages = build_score_messages(r, eval_cfg)
 
                 # 首样本调试输出（只 dump 第一条，避免刷屏）
                 if not sample_dumped["done"]:
@@ -194,6 +200,8 @@ async def run_evaluation(
                         score_entry = {
                             "row_index": row_idx, "query": r["query"],
                             "response_summary": response_text[:200], **parsed,
+                            "score_input_hash": score_input_hash(r),
+                            "eval_config_hash": current_hash,
                         }
                         break
                     except Exception as e:

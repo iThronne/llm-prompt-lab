@@ -62,6 +62,12 @@ python -m src.cli attribute <run_name> --report-only
 # 仅对有非空人工评论的案例归因（可与 --rows、--force 同用）
 python -m src.cli attribute <run_name> --only-with-human-note
 
+# 同时使用 eval 配置独立评分，归因报告展示整体分数及各项指标
+python -m src.cli attribute <run_name> --only-with-human-note --with-score
+
+# 只重建带评分的归因报告，不调用模型
+python -m src.cli attribute <run_name> --with-score --report-only
+
 # 只生成 HTML（完整结果仍保存在 JSONL）
 python -m src.cli attribute <run_name> --format html
 

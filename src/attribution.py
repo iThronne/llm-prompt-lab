@@ -298,6 +298,7 @@ def summarize(records):
 async def run_attribution(run_name: str, config: AttributionConfig, *, rows: list[int] | None = None,
                           force: bool = False, report_only: bool = False,
                           only_with_human_note: bool = False,
+                          with_score: bool = False,
                           formats: tuple[str, ...] = ("html", "xlsx")) -> Path:
     model = offline_model(config)
     all_rows = read_responses(RESULTS_DIR / run_name / "responses.jsonl")
@@ -314,6 +315,17 @@ async def run_attribution(run_name: str, config: AttributionConfig, *, rows: lis
         selected &= with_note
         print(f"[attribute] 仅处理有人工评论的案例：符合条件 {len(selected)} 条，跳过无评论 {skipped} 条")
     cases = prepare_cases(all_rows, config, run_name)
+    scores = None
+    if with_score:
+        from src.attribution_scoring import score_cases
+        try:
+            scores = await score_cases(RESULTS_DIR / run_name, all_rows, selected,
+                                       concurrency=config.concurrency, report_only=report_only)
+        except Exception as exc:
+            print(f"[error] 独立评分失败（{type(exc).__name__}），继续归因。")
+            scores = {r["row_index"]: {"status": "failed", "overall": None, "result": None,
+                      "error": f"{type(exc).__name__}: 评分配置加载或执行失败，请检查 eval 配置和评分文件。"}
+                      for r in all_rows}
     hash_value = config_hash(config)
     directory = RESULTS_DIR / run_name / "attribution" / hash_value
     if report_only and not (directory / "attributions.jsonl").exists():
@@ -394,7 +406,14 @@ async def run_attribution(run_name: str, config: AttributionConfig, *, rows: lis
             if not journal_path.exists():
                 journal_path.touch()
         records = current_records(cases, journal, hash_value)
+        if scores is not None:
+            records = [dict(record, score=scores[record["row_index"]]) for record in records]
         summary = summarize(records)
+        if scores is not None:
+            values = [s["overall"] for s in scores.values() if s.get("status") == "success" and s.get("overall") is not None]
+            summary["score_status_counts"] = dict(Counter(s["status"] for s in scores.values()))
+            summary["score_overall_mean"] = round(sum(values) / len(values), 2) if values else None
+            summary["score_overall_count"] = len(values)
         write_json(directory / "attribution_summary.json", summary)
         from src.attribution_report import generate_reports
         generate_reports(directory, records, summary, formats)
