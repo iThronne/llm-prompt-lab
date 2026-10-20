@@ -638,3 +638,24 @@ example@ali@deepseek-v4-flash@default@candidate-prompt.md@0c3361be
 ```
 
 相同配置产生相同名称，因此相同命令天然支持断点续跑。
+
+
+### 生产日志的新搜索结构（第一阶段适配）
+
+导入支持 user 消息中 `<web_search_context>` 内的 `<search_queries>` 和
+`<search_results>`，分别对应旧格式的搜索参数与工具返回内容。旧工具消息格式仍可使用。
+报告、导出与追问会提取两种格式；归因保留原始 messages 路径，不伪造工具调用。
+内嵌搜索材料表明回答模型收到搜索信息，不证明它亲自决定搜索或生成关键词。
+
+使用默认 `response` 列导入时，若数据带 `response_with_cites` / `cites`，或包含上述
+内嵌搜索材料，将记录 `answer_representation=production_plain_response`。
+这类生产数据继续使用去引用标记后的 `response` 评估正文，不评显式引用准确性，
+也不因缺少引用标记扣分。原始模型 Answer 不可得，不能据此判断其原始引用格式是否合规。
+`response_with_cites` 与 `cites` 原样保存在运行目录的源数据副本和 `responses.jsonl` 中，
+本阶段不送入评分或归因模型，不作为重跑候选模型的输入；完整引用评测与展示尚未启用。
+仅修改存档的引用字段不会使正文评分失效。
+
+历史运行若在导入时已丢弃新字段，需从原始 JSONL 重新导入（建议新 run 名称）。
+升级后的评分配置指纹与归因流水线版本已变更；已有评分需通过 `eval <run> --force`
+重新评测，报告重生成本身不会重算分数。普通 eval 续评也会校验每行输入哈希，
+正文、请求或回答表示变化后不再复用旧评分。JSONL 保留完整长文本，Excel 仍仅用于查看。

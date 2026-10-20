@@ -13,6 +13,7 @@ from src.config import ExperimentConfigLoader
 from src.constants import RESULTS_DIR, META_FILE
 from src.dataset import copy_dataset, _read_records, _normalize_api_json, _is_blank
 from src.attribution import digest
+from src.search_context import embedded_search_contexts
 
 
 def import_data(
@@ -55,7 +56,8 @@ def import_data(
 
     # 保存数据集到 run 目录（仅保留用到的列，保证可追溯；保留源格式）
     cols_to_keep = list(dict.fromkeys([query_col, response_col, api_json_col, note_col,
-                                     "note", "language", "location"]))
+                                     "note", "language", "location",
+                                     "response_with_cites", "cites"]))
     saved_dataset_path = copy_dataset(data_path, result_dir, cols_to_keep)
 
     # 写入 responses.jsonl
@@ -104,6 +106,15 @@ def import_data(
                     "choices": [{"message": {"content": response_text}}]
                 },
             }
+            # 生产回答的附加产物原样存档，不作为候选请求或替换当前正文。
+            for key in ("response_with_cites", "cites"):
+                if key in row:
+                    record[key] = row[key]
+            if response_col == "response" and (
+                "response_with_cites" in row or "cites" in row
+                or embedded_search_contexts(rendered_request.get("messages", []))
+            ):
+                record["answer_representation"] = "production_plain_response"
             if note:
                 # 导入评论绑定到同一行的回答，后续替换回答时可检测版本错配。
                 record["human_note_answer_hash"] = digest(response_text)

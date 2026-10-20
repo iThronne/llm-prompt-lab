@@ -8,6 +8,7 @@
 """
 
 import json
+from src.answer_context import answer_notice
 import re
 from pathlib import Path
 
@@ -87,6 +88,7 @@ def _select_low_score_samples(
             "row_index": idx,
             "query": r.get("query", ""),
             "response": _extract_response_text(r.get("response", {})),
+            "answer_context": answer_notice(r),
             "overall": overall,
             "scores": {
                 k: v for k, v in score.items()

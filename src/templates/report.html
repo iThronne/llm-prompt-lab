@@ -1261,6 +1261,7 @@
                             <div class="expand-section">
                                 <button class="copy-btn" onclick="copyText(this, 'response-${row.row_index}')">复制</button>
                                 <div class="expand-label">Response</div>
+                                ${row.answer_context ? `<p>${escapeHtml(row.answer_context)}</p>` : ''}
                                 <div class="expand-text" id="response-${row.row_index}">${escapeHtml(row.response)}</div>
                             </div>
                             ${row.reasoning ? `

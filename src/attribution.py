@@ -14,6 +14,8 @@ from src.config import AttributionConfig
 from src.constants import RESULTS_DIR
 from src.models import create_client, call_model, call_model_stream
 from src.sanitizer import compile_rules, sanitize_text
+from src.answer_context import answer_notice
+from src.search_context import embedded_search_contexts
 
 
 def digest(value) -> str:
@@ -74,6 +76,8 @@ def _text(value):
 
 def build_input(row: dict, config: AttributionConfig) -> tuple[dict, list[str], dict]:
     quality = []
+    if answer_notice(row):
+        quality.append(answer_notice(row))
     request = row.get("rendered_request")
     messages = request.get("messages") if isinstance(request, dict) else None
     if not isinstance(messages, list):
@@ -170,7 +174,12 @@ def tool_trace(messages: list, search_names: list[str]) -> dict:
     for call in calls:
         if not call["tool_call_id"] or call["tool_call_id"] not in returned:
             warnings.append(f"工具调用 {call['path']} 缺少可关联的返回结果。")
-    return {"calls": calls, "results": results, "warnings": warnings}
+    return {"calls": calls, "results": results, "warnings": warnings,
+            "embedded_search_contexts": [
+                {"path": item["path"], "has_search_queries": bool(item["search_queries"]),
+                 "has_search_results": bool(item["search_results"])}
+                for item in embedded_search_contexts(messages)
+            ]}
 
 
 def build_messages(config, snapshot, quality, trace):

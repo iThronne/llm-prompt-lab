@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 from src.advisor import _extract_rendered_system
+from src.answer_context import answer_notice
 from src.config import AdviseConfig
 from src.constants import RESULTS_DIR
 from src.models import ContentCallback, call_model_stream, create_client
@@ -64,6 +65,8 @@ def _build_case_context(row: dict, score: dict, judge_prompt: str) -> str:
     ]
 
     reasoning = _extract_reasoning_text(response)
+    if answer_notice(row):
+        sections.append("### 回答表示与评测边界\n" + answer_notice(row))
     if reasoning:
         sections.append("### 候选模型推理\n" + reasoning)
 

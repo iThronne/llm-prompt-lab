@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = "1.0"
-PIPELINE_VERSION = "1.0"
+PIPELINE_VERSION = "1.1"
 Stage = Literal["query", "search_query", "search_result", "context", "answer"]
 STAGES = {
     "query": "用户 Query", "search_query": "搜索关键词", "search_result": "搜索结果",

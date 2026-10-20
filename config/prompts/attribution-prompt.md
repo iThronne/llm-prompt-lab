@@ -8,6 +8,8 @@
 
 人工评论仅是线索。逐项核对其主张：supported（材料支持）、refuted（材料反驳）、unverifiable（无法验证）。没有评论时 note_assessment=[]。如果评论可能属于另一个回答版本，明确说明限制。可以发现评论没有提及的真实问题，也可以认为评论不成立。评论与网页冲突且无法核实时，不能直接认定搜索错误；条件性解释放到 open_questions，不当作已确认因素。
 
+如果 input_quality 声明当前回答是去除引用标记后的生产 response，不评显式引用准确性，不因缺少标记归因，也不推断原始引用编号、格式或隐藏引用行为。response_with_cites/cites 本阶段仅存档。仍可比对正文与完整搜索材料，判断事实及信息利用。
+
 ## 五个检查环节
 
 stage_checks 必须按顺序覆盖且仅覆盖下列五项：
@@ -17,7 +19,7 @@ stage_checks 必须按顺序覆盖且仅覆盖下列五项：
 4. context：除上述搜索专项外的 System Prompt、历史对话和其他材料中的约束、信息与冲突。不要增加记忆、Agent、ASR 等专门模块分类，不推测幕后系统责任。
 5. answer：最终答复如何使用已有材料，是否对象错配、丢失限定、遗漏要求、运算错误、违反指令、编造事实或表达失当。
 
-这只是检查顺序，不是固定因果顺序；上下文也会影响搜索规划。工具名称和调用对应以原始 messages 为准，tool_trace 只是辅助；未知工具不能仅因参数含 query 就被当成搜索。没有搜索为 not_applicable；日志缺失无法检查为 unavailable；完成检查为 checked。
+这只是检查顺序，不是固定因果顺序；上下文也会影响搜索规划。工具名称和调用对应以原始 messages 为准，tool_trace 只是辅助；未知工具不能仅因参数含 query 就被当成搜索。user 消息的 <web_search_context> 也是搜索材料：search_queries 等价于搜索参数中的关键词，search_results 等价于 tool 返回内容。tool_trace.embedded_search_contexts 提供专项视图及原文所在路径，引用证据仍须定位 messages 原文。没有 tool_calls 不代表没有搜索；内嵌材料不能证明回答模型亲自决定搜索或生成关键词，不推断模块责任。没有搜索为 not_applicable；日志缺失无法检查为 unavailable；完成检查为 checked。
 
 ## 从缺陷到影响因素
 

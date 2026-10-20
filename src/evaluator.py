@@ -21,6 +21,7 @@ from src.constants import RESULTS_DIR
 from src.models import create_client, call_model, call_model_stream
 from src.reporter import load_responses, load_scores
 from src.sanitizer import compile_rules, sanitize_messages
+from src.answer_context import answer_notice
 
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
@@ -34,6 +35,7 @@ def compute_eval_hash(eval_cfg: EvalConfig) -> str:
         "prompt": eval_cfg.prompt,
         "dimensions": eval_cfg.dimensions,
         "sanitize": [r.model_dump() for r in eval_cfg.sanitize],
+        "input_pipeline_version": "2",
     }
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
     return hashlib.md5(canonical.encode()).hexdigest()[:8]
@@ -43,16 +45,21 @@ def score_input_hash(result: dict) -> str:
     """绑定评分材料，不包含人工评论、归因或其他运行结果。"""
     payload = {"query": result.get("query"), "rendered_request": result.get("rendered_request"),
                "response": result.get("response"), "language": result.get("language"),
-               "location": result.get("location")}
+               "location": result.get("location"),
+               "answer_representation": result.get("answer_representation")}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 
 
 def build_score_messages(result: dict, eval_cfg: EvalConfig) -> list[dict]:
     messages = (result.get("rendered_request") or {}).get("messages", [])
-    return _build_judge_messages(eval_cfg.prompt,
+    built = _build_judge_messages(eval_cfg.prompt,
         sanitize_messages(messages, compile_rules(eval_cfg.sanitize)),
         _extract_response_text(result.get("response")),
         language=result.get("language"), location=result.get("location"))
+    notice = answer_notice(result)
+    if notice:
+        built[1]["content"] = "## 回答表示与评测边界\n\n" + notice + "\n\n" + built[1]["content"]
+    return built
 
 
 async def run_evaluation(
@@ -124,6 +131,14 @@ async def run_evaluation(
             # hash 相同，正常断点续评
             done_count = len(existing_scores)
             print(f"[resume] {done_count}/{len(results)} scores already exist, resuming...")
+
+    # 仅复用与当前输入绑定的评分；旧的无绑定记录也需重评。
+    existing_scores = {
+        r["row_index"]: existing_scores[r["row_index"]]
+        for r in results
+        if r["row_index"] in existing_scores
+        and existing_scores[r["row_index"]].get("score_input_hash") == score_input_hash(r)
+    }
 
     # 空回复没有可评内容：记录为已跳过，避免送给 Judge，也避免断点续跑时反复尝试。
     # 同时覆盖旧版本可能已经为这些行生成的分数，防止其继续污染统计。
@@ -267,7 +282,7 @@ def _append_score(scores_path: Path, entry: dict):
 
 def _sort_scores(scores_path: Path, existing_scores: dict):
     """按 row_index 排序后重写 scores.jsonl。"""
-    if not scores_path.exists() or not existing_scores:
+    if not scores_path.exists() and not existing_scores:
         return
 
     with open(scores_path, "w", encoding="utf-8") as f:

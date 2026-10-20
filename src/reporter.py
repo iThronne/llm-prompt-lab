@@ -15,6 +15,8 @@ import pandas as pd
 from jinja2 import Environment, PackageLoader
 
 from src.constants import RESULTS_DIR
+from src.search_context import embedded_search_contexts
+from src.answer_context import answer_notice
 
 # Excel 单元格硬上限：32767 字符。超长字段写入前截断并标注，
 # 完整数据仍保留在 responses.jsonl，Excel 仅供人工查看。
@@ -147,7 +149,7 @@ def _extract_usage(response: dict) -> dict:
 
 
 def _extract_search_queries(rendered_request: dict | None) -> str:
-    """从 rendered_request 中提取搜索关键词（tool_calls 中的 queries）。
+    """提取工具调用参数及 user 内嵌 search_queries。
 
     Returns:
         格式化的搜索关键词文本，如无搜索则返回空字符串
@@ -166,11 +168,13 @@ def _extract_search_queries(rendered_request: dict | None) -> str:
                     args = json.dumps(args, ensure_ascii=False)
                 parts.append(args)
 
+    parts.extend(item["search_queries"] for item in embedded_search_contexts(messages)
+                 if item["search_queries"])
     return "\n\n".join(parts)
 
 
 def _extract_search_results(rendered_request: dict | None) -> str:
-    """从 rendered_request 中提取搜索结果（tool 消息）。
+    """提取 tool 消息及 user 内嵌 search_results。
 
     Returns:
         格式化的搜索结果文本，如无搜索则返回空字符串
@@ -187,6 +191,8 @@ def _extract_search_results(rendered_request: dict | None) -> str:
                 content = json.dumps(content, ensure_ascii=False)
             parts.append(content)
 
+    parts.extend(item["search_results"] for item in embedded_search_contexts(messages)
+                 if item["search_results"])
     return "\n\n".join(parts)
 
 
@@ -315,6 +321,7 @@ def generate_html_report(run_name: str, open_browser: bool = False) -> Path:
             "row_index": row_idx,
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
+            "answer_context": answer_notice(r),
             "reasoning": _extract_reasoning_text(response),
             "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
@@ -441,6 +448,7 @@ def export_excel(run_name: str) -> Path:
             "row_index": r["row_index"],
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
+            "answer_context": answer_notice(r),
             "reasoning_content": _extract_reasoning_text(response),
             "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
@@ -513,6 +521,7 @@ def export_responses(run_name: str) -> Path:
             "row_index": r["row_index"],
             "query": r.get("query", ""),
             "response": _extract_response_text(response),
+            "answer_context": answer_notice(r),
             "reasoning_content": _extract_reasoning_text(response),
             "search_queries": _extract_search_queries(r.get("rendered_request")),
             "search_results": _extract_search_results(r.get("rendered_request")),
