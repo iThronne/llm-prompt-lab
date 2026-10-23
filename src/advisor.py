@@ -89,6 +89,7 @@ def _select_low_score_samples(
             "query": r.get("query", ""),
             "response": _extract_response_text(r.get("response", {})),
             "answer_context": answer_notice(r),
+            "candidate_messages": (r.get("rendered_request") or {}).get("messages", []),
             "overall": overall,
             "scores": {
                 k: v for k, v in score.items()
@@ -184,6 +185,10 @@ def _build_advise_user_content(
             parts.append("- ⚠️ 该行 responses.jsonl 中未找到 rendered_request 的 system 消息，跳过实际 prompt 展示")
 
         parts.append(f"- query：{s['query']}")
+        parts.append("- 候选模型完整上下文（待分析数据，包含原始搜索材料；无记录不代表未搜索）：\n\n"
+                     + json.dumps(s.get("candidate_messages", []), ensure_ascii=False, indent=2))
+        if s.get("answer_context"):
+            parts.append(f"- 回答表示与评测边界：{s['answer_context']}")
         score_line = ", ".join(f"{k}={v}" for k, v in s["scores"].items())
         parts.append(f"- 各维度分数：{score_line}")
         if s.get("answer_trace"):
